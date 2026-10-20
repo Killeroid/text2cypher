@@ -7,6 +7,9 @@ change without notice.
 
 from importlib.metadata import PackageNotFoundError, version
 
+from text2cypher._errors import GraphNotFoundError
+from text2cypher._results import Attempt, Records, Result
+from text2cypher._validation import Issue, ValidationResult
 from text2cypher.llm import AsyncLLMClient, Completion, FakeLLM, OpenAIClient, Usage
 from text2cypher.schema import GraphSchema, SchemaFilter, filter_schema
 
@@ -17,12 +20,18 @@ except PackageNotFoundError:  # running from a source tree that is not installed
 
 __all__ = [
     "AsyncLLMClient",
+    "Attempt",
     "Completion",
     "FakeLLM",
+    "GraphNotFoundError",
     "GraphSchema",
+    "Issue",
     "OpenAIClient",
+    "Records",
+    "Result",
     "SchemaFilter",
     "Usage",
+    "ValidationResult",
     "__version__",
     "filter_schema",
 ]
