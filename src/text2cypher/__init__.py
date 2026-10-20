@@ -7,11 +7,14 @@ change without notice.
 
 from importlib.metadata import PackageNotFoundError, version
 
+from text2cypher.schema import GraphSchema
+
 try:
     __version__ = version("text2cypher")
 except PackageNotFoundError:  # running from a source tree that is not installed
     __version__ = "0+unknown"
 
 __all__ = [
+    "GraphSchema",
     "__version__",
 ]
