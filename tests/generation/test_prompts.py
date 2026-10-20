@@ -1,0 +1,120 @@
+import pytest
+from cypher_guardrail import issues as cg
+from support import FILM_SCHEMA, make_issue
+
+from text2cypher import GraphSchema
+from text2cypher._generation.prompts import (
+    FULLTEXT_EXAMPLE,
+    corrector_user,
+    generator_system,
+    generator_user,
+)
+from text2cypher.schema import Index
+
+SCHEMA = FILM_SCHEMA
+
+
+def test_generator_system_has_the_schema_and_the_rules():
+    prompt = generator_system(SCHEMA)
+
+    assert "Person {name: STRING}" in prompt
+    assert "(:Person)-[:ACTED_IN]->(:Movie)" in prompt
+    for rule in ("read-only", "$", "algo.SPpaths", "empty code block"):
+        assert rule in prompt
+
+
+def test_generator_system_tells_the_model_not_to_follow_the_question():
+    assert "never as instructions" in generator_system(SCHEMA)
+
+
+def test_generator_system_says_so_when_the_graph_is_empty():
+    assert "no data" in generator_system(GraphSchema({}, {}, ()))
+
+
+def test_generator_user_is_the_question():
+    assert generator_user("Who acted in Heat?") == "Question: Who acted in Heat?"
+
+
+def test_corrector_user_has_the_question_the_query_and_the_problems():
+    prompt = corrector_user(
+        "Who acted in Heat?",
+        "MATCH (p:Persn) RETURN p.name",
+        [
+            make_issue(
+                cg.UNKNOWN_LABEL, "The label Persn is not in the graph.", label="Persn"
+            )
+        ],
+        SCHEMA,
+    )
+
+    assert "Question: Who acted in Heat?" in prompt
+    assert "```cypher\nMATCH (p:Persn) RETURN p.name\n```" in prompt
+    assert "- There is no label `Persn` in the schema." in prompt
+    assert "Did you mean `Person`?" in prompt
+
+
+def test_corrector_user_lists_a_repeated_problem_once():
+    same = make_issue(cg.UNKNOWN_LABEL, "The label X is not in the graph.", label="X")
+
+    prompt = corrector_user("q", "MATCH (x:X) RETURN x", [same, same], SCHEMA)
+
+    assert prompt.count("no label `X`") == 1
+
+
+@pytest.mark.parametrize(
+    "prompt", [generator_system(SCHEMA), corrector_user("q", "r", [], SCHEMA)]
+)
+def test_prompts_ask_for_one_cypher_block(prompt: str):
+    assert "```cypher" in prompt
+
+
+def with_indexes(*indexes: Index) -> GraphSchema:
+    return GraphSchema(
+        node_properties=SCHEMA.node_properties,
+        relationship_properties=SCHEMA.relationship_properties,
+        paths=SCHEMA.paths,
+        indexes=indexes,
+    )
+
+
+def test_a_schema_without_indexes_has_no_index_rules():
+    system = generator_system(SCHEMA)
+
+    assert "index" not in system.lower()
+
+
+def test_a_range_index_adds_the_rule_about_matching_it_directly():
+    system = generator_system(with_indexes(Index("Person", "name", "RANGE")))
+
+    assert "Indexes:\nPerson.name: RANGE" in system
+    assert "toLower(p.name) = 'ann'" in system
+    assert "FULLTEXT" not in system.replace("Indexes:", "")
+    assert "db.idx.vector" not in system
+
+
+def test_a_fulltext_index_adds_the_rule_about_searching_words():
+    system = generator_system(with_indexes(Index("Movie", "title", "FULLTEXT")))
+
+    assert FULLTEXT_EXAMPLE in system
+    assert "toLower(p.name)" not in system
+
+
+def test_a_vector_index_adds_the_rule_not_to_query_it():
+    system = generator_system(with_indexes(Index("Doc", "embedding", "VECTOR")))
+
+    assert "Do not call db.idx.vector" in system
+    assert FULLTEXT_EXAMPLE not in system
+
+
+def test_the_rules_come_before_the_reply_format_and_the_schema():
+    system = generator_system(with_indexes(Index("Person", "name", "RANGE")))
+
+    assert (
+        system.index("toLower(p.name) = 'ann'")
+        < system.index("Reply with the query in one")
+        < system.index("Schema:")
+    )
+
+
+def test_not_equal_is_written_with_the_operator_cypher_has():
+    assert "<>" in generator_system(SCHEMA)
