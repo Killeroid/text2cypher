@@ -47,3 +47,9 @@ def test_a_schema_refresh_time_cannot_be_negative():
     assert Config(schema_refresh_seconds=0).schema_refresh_seconds == 0
     with pytest.raises(ValueError, match="schema_refresh_seconds"):
         Config(schema_refresh_seconds=-1)
+
+
+def test_the_optional_checks_are_off_by_default():
+    config = Config()
+
+    assert (config.check_types, config.check_performance) == (False, False)

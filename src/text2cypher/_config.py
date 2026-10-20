@@ -14,6 +14,13 @@ class Config:
     are on the result. Generated queries can be expensive, so a run is stopped after
     ``execute_timeout_ms`` milliseconds; ``None`` lets it run without limit.
 
+    Two checks are off by default, because each can report a query that is fine:
+    ``check_types`` reports a property compared with a value of another type, and
+    ``sum``, ``avg`` and the like of a property that holds no numbers; ``check_performance``
+    reports a cartesian product, a scan of every node and a path with no upper bound (a
+    shortest path between two nodes is a cartesian product by design). Every issue a check
+    reports is corrected like any other.
+
     The schema is read from the graph on every run by default. With
     ``schema_refresh_seconds`` it is kept: a run that comes after that many seconds first
     checks whether the graph changed (a few cheap queries) and reads the schema again only
@@ -28,6 +35,8 @@ class Config:
             the result.
         execute_timeout_ms: Stop an execution after this many milliseconds, or never
             if ``None``.
+        check_types: Report type mismatches of properties.
+        check_performance: Report queries that may be expensive.
         schema_refresh_seconds: Keep the schema of a graph and check it for changes at
             most this often, or read it on every run if ``None``.
     """
@@ -37,6 +46,8 @@ class Config:
     execute: bool = False
     execute_timeout_ms: int | None = 10_000
     schema_refresh_seconds: float | None = None
+    check_types: bool = False
+    check_performance: bool = False
 
     def __post_init__(self) -> None:
         if self.attempts_w_filtered < 0:

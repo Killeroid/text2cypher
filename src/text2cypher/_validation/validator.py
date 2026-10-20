@@ -38,6 +38,10 @@ class QueryValidator:
             from it and ask the database only to plan the query and to confirm a problem
             before reporting it, so a query that is fine costs one request. The answers are
             the same as without it, unless the graph changed since the snapshot.
+        check_types: Also report a property compared with a value of another type, and
+            ``sum``, ``avg`` and the like of a property that holds no numbers.
+        check_performance: Also report a valid query that may be expensive: a cartesian
+            product, a scan of every node, a path with no upper bound.
     """
 
     def __init__(
@@ -46,12 +50,18 @@ class QueryValidator:
         *,
         max_concurrency: int = 8,
         snapshot: SnapshotSource | None = None,
+        check_types: bool = False,
+        check_performance: bool = False,
     ) -> None:
         # One backend shared by the validators: one snapshot cache, one concurrency limit
         self._backend = get_async_backend(client, max_concurrency, snapshot=snapshot)
-        self._syntax = AsyncSyntaxValidator(self._backend)
+        self._syntax = AsyncSyntaxValidator(
+            self._backend, check_performance=check_performance
+        )
         self._schema = AsyncSchemaValidator(self._backend)
-        self._properties = AsyncPropertiesValidator(self._backend)
+        self._properties = AsyncPropertiesValidator(
+            self._backend, check_types=check_types
+        )
 
     async def validate(self, query: str, graph: str | None = None) -> ValidationResult:
         """Validate ``query`` against ``graph`` (optional when given a graph).

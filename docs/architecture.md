@@ -144,6 +144,10 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   (an unknown label) elsewhere in the query, so one pass reports every kind of problem.
 - **Validity** is `syntax_ok and not issues`, never derived from scores. A schema score of 1 or a properties score
   of `None` with no issues means "nothing to check", not "correct". Scores stay on `ValidationResult` as metrics.
+- **Two optional checks.** `Config.check_types` (property type mismatches, aggregates of non-numbers) and
+  `Config.check_performance` (cartesian product, unlabeled scan, unbounded path) are passed to the validators and are off
+  by default: each can report a query that is fine (a shortest path between two nodes is a cartesian product by design, and
+  our own prompt example is one). A warning from them is corrected like any other issue.
 - **No severity levels.** Every reported issue triggers a correction. The candidates for a "warning" are all
   defects here (`ParameterNotProvided`: we execute without parameters; `UnknownIndex`: the query would return
   nothing or fail). Add severity only if a real non-blocking case appears.
@@ -259,7 +263,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 - uv for everything (`uv add`, `uv run`); ruff for lint and format (rules B, I, UP, SIM, C4, C90 with a
   complexity limit of 10, PTH, RET, RUF, ASYNC, PT, TID, TC, FURB); ty for types; import-linter for the layers above; pytest (importlib import mode, strict markers); coverage with branches. See
   `CLAUDE.md`.
-- Dependencies: `cypher-guardrail>=1.3.0`, `falkordb`, `openai`, `redis` (for `RedisError`), `snowballstemmer`.
+- Dependencies: `cypher-guardrail>=1.4.0`, `falkordb`, `openai`, `redis` (for `RedisError`), `snowballstemmer`.
   Dev: `falkordblite`, `anyio`, `pytest`, `ruff`, `ty`, `coverage`, `import-linter`, `httpx2` (the OpenAI client tests run the real
   SDK over a mock transport). Docs group: `sphinx`, `myst-parser`, `furo`, `sphinx-copybutton`.
 - Documentation: Sphinx with MyST Markdown, Furo and autodoc (Google docstrings through napoleon), built by Read
@@ -327,9 +331,8 @@ Each item says what would bring it back.
 - A model without a system role: an option on `OpenAIClient` that sends one user message.
 
 **Other**
-- `PropertiesValidator(check_types=True)` (`PropertyTypeMismatch`), off for now.
-- Validator checks `cypher-guardrail` may not have (cartesian products, unlabeled full scans, unbounded
-  variable-length paths, aggregate argument types, unbound variables): candidates for upstream requests.
+- Turning `check_types` on by default: it reported nothing on the gold queries of both trial graphs, but it has not been tried with a model.
+- Listing the functions of the instance (`Snapshot.udfs`, new in cypher-guardrail 1.4) in the prompt, so the LLM can use them.
 - Embedding similarity for the lexical filter (a heavy dependency, would be an extra) and property-name matching:
   when the filter's miss rate justifies them.
 - Feeding a runtime failure or an empty result back to the corrector; a row limit; converting rows to plain Python.

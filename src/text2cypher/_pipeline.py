@@ -59,7 +59,12 @@ class Text2Cypher:
         snapshot, source = await self._schemas.read(graph)
         # The validators answer from the snapshot the prompt was written from, so they cannot
         # disagree with it, and ask the database only to plan the query and confirm a problem
-        validator = QueryValidator(self._client, snapshot=source)
+        validator = QueryValidator(
+            self._client,
+            snapshot=source,
+            check_types=self._config.check_types,
+            check_performance=self._config.check_performance,
+        )
         result = await run_workflow(
             question,
             schema_from_snapshot(snapshot),

@@ -12,12 +12,21 @@ from difflib import SequenceMatcher
 from typing import Any
 
 from cypher_guardrail.issues import (
+    AGGREGATE_TYPE_MISMATCH,
+    CARTESIAN_PRODUCT,
+    INVALID_LIMIT_ERROR,
     INVALID_PROPERTY_ACCESS,
     PARAMETER_NOT_PROVIDED,
+    PROPERTY_TYPE_MISMATCH,
+    UNBOUND_VARIABLE_ERROR,
+    UNBOUNDED_PATH,
+    UNKNOWN_FUNCTION,
+    UNKNOWN_FUNCTION_ERROR,
     UNKNOWN_LABEL,
     UNKNOWN_PATH,
     UNKNOWN_PROPERTY,
     UNKNOWN_REL_TYPE,
+    UNLABELED_NODE_SCAN,
     WRITE_QUERY_ERROR,
 )
 
@@ -111,6 +120,58 @@ def _parameter_without_value(raw: Fields, schema: GraphSchema) -> str:
     )
 
 
+def _unbound_variable(raw: Fields, schema: GraphSchema) -> str:
+    return (
+        f"- The variable `{raw['variable']}` is used but never defined. Define it in a "
+        "MATCH or a WITH before it is used, or use one that is defined."
+    )
+
+
+def _unknown_function(raw: Fields, schema: GraphSchema) -> str:
+    return f"- There is no function `{raw['name']}` in this FalkorDB. Use only functions that exist."
+
+
+def _invalid_limit(raw: Fields, schema: GraphSchema) -> str:
+    return f"- The value after {raw['clause']} must be a positive integer, written in the query."
+
+
+def _cartesian_product(raw: Fields, schema: GraphSchema) -> str:
+    groups = " and ".join(f"with ({', '.join(group)})" for group in raw["variables"])
+    return (
+        f"- The patterns {groups} are not connected, so every row of one is paired with "
+        "every row of the other. Connect them with a relationship in one pattern."
+    )
+
+
+def _unlabeled_node_scan(raw: Fields, schema: GraphSchema) -> str:
+    return (
+        f"- `{raw['variable']}` has no label, so every node in the graph is read. "
+        "Give it the label it should have."
+    )
+
+
+def _unbounded_path(raw: Fields, schema: GraphSchema) -> str:
+    return (
+        f"- The path {raw['path']} has no upper bound on its length, so it can read the "
+        "whole graph. Give it one, such as *1..4."
+    )
+
+
+def _property_type_mismatch(raw: Fields, schema: GraphSchema) -> str:
+    return (
+        f"- `{raw['name']}.{raw['property']}` holds {', '.join(raw['expected_types'])} "
+        f"values, but the query compares it with the {raw['value_type']} {raw['value']!r}. "
+        "Compare it with a value of the right type."
+    )
+
+
+def _aggregate_type_mismatch(raw: Fields, schema: GraphSchema) -> str:
+    return (
+        f"- `{raw['function']}` needs numbers, but `{raw['name']}.{raw['property']}` holds "
+        f"only {', '.join(raw['types'])} values. Use a property that holds numbers."
+    )
+
+
 def _write_query(raw: Fields, schema: GraphSchema) -> str:
     return "- The query can modify the graph. Only read queries are allowed."
 
@@ -190,4 +251,13 @@ _HANDLERS: dict[str, Callable[[Fields, GraphSchema], str | None]] = {
     UNKNOWN_PATH: _unknown_path,
     PARAMETER_NOT_PROVIDED: _parameter_without_value,
     WRITE_QUERY_ERROR: _write_query,
+    UNBOUND_VARIABLE_ERROR: _unbound_variable,
+    UNKNOWN_FUNCTION_ERROR: _unknown_function,
+    UNKNOWN_FUNCTION: _unknown_function,
+    INVALID_LIMIT_ERROR: _invalid_limit,
+    CARTESIAN_PRODUCT: _cartesian_product,
+    UNLABELED_NODE_SCAN: _unlabeled_node_scan,
+    UNBOUNDED_PATH: _unbounded_path,
+    PROPERTY_TYPE_MISMATCH: _property_type_mismatch,
+    AGGREGATE_TYPE_MISMATCH: _aggregate_type_mismatch,
 }

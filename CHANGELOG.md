@@ -4,6 +4,19 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## Unreleased
 
+### Added
+
+- `Config(check_types=True)` reports a property compared with a value of another type and `sum`, `avg` and the like of a property that holds no
+  numbers, and `Config(check_performance=True)` reports a cartesian product, a scan of every node and a path with no upper bound. Both are off by
+  default, because each can report a query that is fine, and what they report is corrected like any other problem.
+- The LLM is told about the new problems in words it can act on: an undefined variable, an unknown function (also a user-defined one that the
+  instance does not have), a `LIMIT` or `SKIP` that is not a positive integer, and the type and performance problems above.
+
+### Changed
+
+- Requires cypher-guardrail 1.4.0 (it was 1.3.0). Validating a query that is a read no longer runs it for longer than a millisecond: a
+  query of three cartesian products over 3000 nodes took more than a minute to validate before.
+
 ## 0.1.0 - 2026-10-20
 
 The first release. It is alpha: the public names are pinned by a test, but the prompts, the defaults and the schema filter are likely to change as they meet more models and larger graphs.

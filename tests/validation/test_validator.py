@@ -88,6 +88,30 @@ FIELD_CASES: dict[str, tuple[str, str, str, dict[str, Any]]] = {
         cg.PARAMETER_NOT_PROVIDED,
         {"parameters": ["n"]},
     ),
+    "unbound variable": (
+        "MATCH (p:Person) RETURN q.name",
+        "syntax",
+        cg.UNBOUND_VARIABLE_ERROR,
+        {"variable": "q"},
+    ),
+    "unknown function": (
+        "MATCH (p:Person) RETURN nosuch.fn(p.name)",
+        "syntax",
+        cg.UNKNOWN_FUNCTION_ERROR,
+        {"name": "nosuch.fn"},
+    ),
+    "unknown function in the instance": (
+        "MATCH (p:Person) RETURN nosuch.fn(p.name)",
+        "schema",
+        cg.UNKNOWN_FUNCTION,
+        {"name": "nosuch.fn"},
+    ),
+    "invalid limit": (
+        "MATCH (p:Person) RETURN p.name LIMIT 'ten'",
+        "syntax",
+        cg.INVALID_LIMIT_ERROR,
+        {"clause": "LIMIT"},
+    ),
     "conflicting variables": (
         "MATCH (a:Person)-[:ACTED_IN]->(a:Movie) RETURN a",
         "syntax",
@@ -306,3 +330,90 @@ async def test_a_snapshot_gives_the_same_answers_with_fewer_requests(
         "MATCH (p:Person)-[:ACTED_IN]->(m:Movie) RETURN p.name", movies_graph
     )
     assert sum(commands.values()) == 1
+
+
+PERFORMANCE_CASES = {
+    "cartesian product": (
+        "MATCH (p:Person), (m:Movie) RETURN p.name, m.title",
+        cg.CARTESIAN_PRODUCT,
+        {"variables": [["p"], ["m"]]},
+    ),
+    "unlabeled scan": (
+        "MATCH (n) WHERE n.name = 'Keanu' RETURN n.name",
+        cg.UNLABELED_NODE_SCAN,
+        {"variable": "n"},
+    ),
+    "unbounded path": (
+        "MATCH (p:Person)-[:ACTED_IN*]->(m:Movie) RETURN p.name",
+        cg.UNBOUNDED_PATH,
+        {"path": "(p:Person)-[:ACTED_IN*]->(m:Movie)"},
+    ),
+}
+TYPE_CASES = {
+    "compared with another type": (
+        "MATCH (p:Person) WHERE p.name = 5 RETURN p.name",
+        cg.PROPERTY_TYPE_MISMATCH,
+        {"kind": "node", "name": "Person", "property": "name", "value_type": "Integer"},
+    ),
+    "aggregate of a string": (
+        "MATCH (m:Movie) RETURN sum(m.title)",
+        cg.AGGREGATE_TYPE_MISMATCH,
+        {"function": "sum", "kind": "node", "name": "Movie", "property": "title"},
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ("query", "code", "fields"),
+    PERFORMANCE_CASES.values(),
+    ids=PERFORMANCE_CASES.keys(),
+)
+async def test_performance_checks_are_off_unless_asked_for(
+    falkordb_client: FalkorDB, movies_graph: str, query: str, code: str, fields: dict
+):
+    off = await QueryValidator(falkordb_client).validate(query, movies_graph)
+    on = await QueryValidator(falkordb_client, check_performance=True).validate(
+        query, movies_graph
+    )
+
+    assert off.valid
+    [issue] = [i for i in on.issues if i.code == code]
+    assert issue.source == "syntax"
+    assert {key: issue.fields[key] for key in fields} == fields
+    assert not on.valid  # every issue is corrected, a warning too
+
+
+@pytest.mark.parametrize(
+    ("query", "code", "fields"), TYPE_CASES.values(), ids=TYPE_CASES.keys()
+)
+async def test_type_checks_are_off_unless_asked_for(
+    falkordb_client: FalkorDB, movies_graph: str, query: str, code: str, fields: dict
+):
+    off = await QueryValidator(falkordb_client).validate(query, movies_graph)
+    on = await QueryValidator(falkordb_client, check_types=True).validate(
+        query, movies_graph
+    )
+
+    assert off.valid
+    [issue] = [i for i in on.issues if i.code == code]
+    assert issue.source == "properties"
+    assert {key: issue.fields[key] for key in fields} == fields
+
+
+async def test_the_optional_checks_work_from_a_snapshot_too(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    snapshot = await Snapshot.capture_async(falkordb_client, movies_graph, types=True)
+    validator = QueryValidator(
+        falkordb_client, snapshot=snapshot, check_types=True, check_performance=True
+    )
+
+    types = await validator.validate(
+        "MATCH (m:Movie) RETURN sum(m.title)", movies_graph
+    )
+    plan = await validator.validate(
+        "MATCH (p:Person), (m:Movie) RETURN p.name", movies_graph
+    )
+
+    assert [i.code for i in types.issues] == [cg.AGGREGATE_TYPE_MISMATCH]
+    assert [i.code for i in plan.issues] == [cg.CARTESIAN_PRODUCT]

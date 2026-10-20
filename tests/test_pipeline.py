@@ -346,3 +346,40 @@ async def test_the_indexes_of_the_graph_are_in_the_prompt(
     assert result.status == "valid"
     assert "Indexes:\nPerson.name: RANGE" in llm.calls[0].system
     assert "cannot use the index" in llm.calls[0].system
+
+
+async def test_the_performance_check_makes_the_loop_correct_a_cartesian_product(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    llm = FakeLLM(
+        [
+            reply("MATCH (p:Person), (m:Movie) RETURN p.name, m.title"),
+            reply("MATCH (p:Person)-[:ACTED_IN]->(m:Movie) RETURN p.name, m.title"),
+        ]
+    )
+
+    result = await Text2Cypher(
+        falkordb_client, llm, config=Config(check_performance=True)
+    ).run("Who acted in what?", movies_graph)
+
+    assert result.status == "valid"
+    assert len(result.attempts) == 2
+    assert "are not connected" in llm.calls[1].user
+
+
+async def test_the_type_check_makes_the_loop_correct_a_sum_of_text(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    llm = FakeLLM(
+        [
+            reply("MATCH (m:Movie) RETURN sum(m.title)"),
+            reply("MATCH (m:Movie) RETURN sum(m.year)"),
+        ]
+    )
+
+    result = await Text2Cypher(
+        falkordb_client, llm, config=Config(check_types=True)
+    ).run("What is the total of the years?", movies_graph)
+
+    assert result.status == "valid"
+    assert "`sum` needs numbers" in llm.calls[1].user

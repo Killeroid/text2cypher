@@ -1,5 +1,6 @@
 """How the problems of a query are put to the LLM, from the fields of each issue."""
 
+import pytest
 from cypher_guardrail import issues as cg
 from support import make_issue
 
@@ -294,3 +295,142 @@ def test_a_single_parameter_is_worded_in_the_singular():
     )
 
     assert text.startswith("- The query uses the parameter `$n`, which has no value.")
+
+
+def test_an_undefined_variable_is_named():
+    text = problems(
+        [
+            make_issue(
+                cg.UNBOUND_VARIABLE_ERROR,
+                "'q' not defined",
+                source="syntax",
+                variable="q",
+            )
+        ],
+        SCHEMA,
+    )
+
+    assert text == (
+        "- The variable `q` is used but never defined. Define it in a MATCH or a WITH "
+        "before it is used, or use one that is defined."
+    )
+
+
+def test_an_unknown_function_is_said_once_whichever_validator_found_it():
+    error = make_issue(
+        cg.UNKNOWN_FUNCTION_ERROR, "Unknown function", source="syntax", name="a.b"
+    )
+    warning = make_issue(cg.UNKNOWN_FUNCTION, "The function is not known", name="a.b")
+
+    text = problems([error, warning], SCHEMA)
+
+    assert (
+        text
+        == "- There is no function `a.b` in this FalkorDB. Use only functions that exist."
+    )
+
+
+@pytest.mark.parametrize("clause", ["LIMIT", "SKIP"])
+def test_the_value_of_a_limit_or_skip_must_be_a_number_in_the_query(clause: str):
+    text = problems(
+        [make_issue(cg.INVALID_LIMIT_ERROR, "x", source="syntax", clause=clause)],
+        SCHEMA,
+    )
+
+    assert (
+        text
+        == f"- The value after {clause} must be a positive integer, written in the query."
+    )
+
+
+def test_a_cartesian_product_says_which_patterns_are_not_connected():
+    text = problems(
+        [
+            make_issue(
+                cg.CARTESIAN_PRODUCT,
+                "x",
+                source="syntax",
+                variables=[["p"], ["m", "r"]],
+            )
+        ],
+        SCHEMA,
+    )
+
+    assert text == (
+        "- The patterns with (p) and with (m, r) are not connected, so every row of one is "
+        "paired with every row of the other. Connect them with a relationship in one "
+        "pattern."
+    )
+
+
+def test_a_scan_of_every_node_asks_for_a_label():
+    text = problems(
+        [make_issue(cg.UNLABELED_NODE_SCAN, "x", source="syntax", variable="n")], SCHEMA
+    )
+
+    assert text == (
+        "- `n` has no label, so every node in the graph is read. Give it the label it should have."
+    )
+
+
+def test_a_path_without_an_upper_bound_asks_for_one():
+    text = problems(
+        [
+            make_issue(
+                cg.UNBOUNDED_PATH, "x", source="syntax", path="(a:A)-[:R*]->(b:B)"
+            )
+        ],
+        SCHEMA,
+    )
+
+    assert text == (
+        "- The path (a:A)-[:R*]->(b:B) has no upper bound on its length, so it can read the "
+        "whole graph. Give it one, such as *1..4."
+    )
+
+
+def test_a_comparison_with_the_wrong_type_says_what_the_property_holds():
+    text = problems(
+        [
+            make_issue(
+                cg.PROPERTY_TYPE_MISMATCH,
+                "x",
+                source="properties",
+                kind="node",
+                name="Person",
+                property="born",
+                expected_types=["Integer"],
+                value="old",
+                value_type="String",
+            )
+        ],
+        SCHEMA,
+    )
+
+    assert text == (
+        "- `Person.born` holds Integer values, but the query compares it with the String 'old'. "
+        "Compare it with a value of the right type."
+    )
+
+
+def test_an_aggregate_of_text_says_what_the_property_holds():
+    text = problems(
+        [
+            make_issue(
+                cg.AGGREGATE_TYPE_MISMATCH,
+                "x",
+                source="properties",
+                function="sum",
+                kind="node",
+                name="Person",
+                property="name",
+                types=["String"],
+            )
+        ],
+        SCHEMA,
+    )
+
+    assert text == (
+        "- `sum` needs numbers, but `Person.name` holds only String values. "
+        "Use a property that holds numbers."
+    )
