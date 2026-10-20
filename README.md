@@ -6,7 +6,6 @@
 [![CI](https://github.com/Killeroid/text2cypher/actions/workflows/ci.yml/badge.svg)](https://github.com/Killeroid/text2cypher/actions/workflows/ci.yml)
 [![Documentation](https://readthedocs.org/projects/text2cypher/badge/?version=latest)](https://text2cypher.readthedocs.io/en/latest/)
 [![Python](https://img.shields.io/badge/Python-%3E%3D3.12-brightgreen)](https://www.python.org/)
-[![Status](https://img.shields.io/badge/status-alpha-orange)](https://github.com/Killeroid/text2cypher/blob/main/CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/Killeroid/text2cypher/blob/main/LICENSE)
 
 text2cypher asks an LLM to write the query, checks it against the real graph with [cypher-guardrail](https://github.com/Killeroid/cypher-guardrail), and sends what is wrong back to the LLM until the query passes or the attempts run out. A query that fails the checks is never handed back as if it were fine.
@@ -61,7 +60,7 @@ There is also [a quickstart that needs no model and no server](https://github.co
 
 * **Checked**: the query is valid Cypher for FalkorDB, it cannot write, its parameters are provided (the prompt asks for values written in the query, so a `$name` is a problem), the labels, relationship types and paths exist in the direction used, and every property read exists on the label or relationship type it is read from.
 * **Not checked**: that the query means what the question meant. A query can be valid and still answer another question, for example by using a property with a similar name. Look at the query, or at the rows, before you rely on them.
-* **Early days**: the prompts and the loop have been tried with small models and small graphs, and the filter has not been measured on a real large schema. Expect them to need work.
+* **Known limits**: the prompts, the loop and the schema filter have been tried with Claude Haiku on two small test graphs (6 and 36 labels); the filter was measured offline on the larger one. How well they do on your data, on a large schema or with other models is not measured yet, so check the queries and the rows on your own questions (the [`evals/`](https://github.com/Killeroid/text2cypher/blob/main/evals/README.md) harness is there for that). Prompts and the filter's matching can change in a minor version; the public names (`text2cypher.__all__`, `text2cypher.llm` and `text2cypher.schema`) follow [semantic versioning](https://semver.org/).
 
 ## Documentation
 

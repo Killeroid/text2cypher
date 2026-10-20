@@ -259,7 +259,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 ## Tooling and constraints
 
 - Python `>=3.12` (CI matrix 3.12, 3.13, 3.14): the embedded FalkorDB used by the tests needs 3.12, and nothing needs
-  a newer feature. `py.typed` is shipped; the classifiers say alpha, Python 3.12-3.14, typed.
+  a newer feature. `py.typed` is shipped; the classifiers say production/stable, Python 3.12-3.14, typed.
 - uv for everything (`uv add`, `uv run`); ruff for lint and format (rules B, I, UP, SIM, C4, C90 with a
   complexity limit of 10, PTH, RET, RUF, ASYNC, PT, TID, TC, FURB); ty for types; import-linter for the layers above; pytest (importlib import mode, strict markers); coverage with branches. See
   `CLAUDE.md`.

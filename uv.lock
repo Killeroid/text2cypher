@@ -1578,7 +1578,7 @@ wheels = [
 
 [[package]]
 name = "text2cypher"
-version = "0.1.0"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "cypher-guardrail" },

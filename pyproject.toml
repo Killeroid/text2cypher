@@ -1,6 +1,6 @@
 [project]
 name = "text2cypher"
-version = "0.1.0"
+version = "1.0.0"
 description = "text2cypher: Generate validated Cypher queries from natural language text with LLMs"
 readme = "README.md"
 authors = [
@@ -16,7 +16,7 @@ dependencies = [
 ]
 keywords = ["cypher", "text2cypher", "falkordb", "llm", "knowledge-graph", "openCypher", "graphdb"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Framework :: AsyncIO",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",

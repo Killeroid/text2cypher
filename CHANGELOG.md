@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## Unreleased
 
+## 1.0.0 - 2026-10-20
+
+The first stable release. From here the public names (`text2cypher.__all__`, `text2cypher.llm` and `text2cypher.schema`) follow [semantic versioning](https://semver.org/): a breaking change to them needs a new major version. The prompts and the way the schema filter matches are not part of that promise and can change in a minor version. They have been tried with Claude Haiku on two small test graphs; see "Known limits" in the README.
+
 ### Added
 
 - `Config(check_types=True)` reports a property compared with a value of another type and `sum`, `avg` and the like of a property that holds no
