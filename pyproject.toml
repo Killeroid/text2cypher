@@ -1,0 +1,73 @@
+[project]
+name = "text2cypher"
+version = "0.1.0"
+description = "text2cypher: Generate validated Cypher queries from natural language text with LLMs"
+readme = "README.md"
+authors = [
+    { name = "Kwaku Yeboah-Antwi" }
+]
+requires-python = ">=3.12"
+dependencies = []
+keywords = ["cypher", "text2cypher", "falkordb", "llm", "knowledge-graph", "openCypher", "graphdb"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Database",
+    "Typing :: Typed",
+]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "text2cypher"
+
+[dependency-groups]
+dev = [
+    "coverage>=7.16.2",
+    "pytest>=9.1.1",
+    "ruff>=0.17.0",
+    "ty>=0.0.87",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["db: needs the embedded FalkorDB server (skip with -m \"not db\")"]
+# importlib mode (recommended for new projects) lets test files in different folders share a name
+addopts = ["--import-mode=importlib", "--strict-markers"]
+# so that the tests can import the trial harness in evals/ and the helpers in tests/support.py
+pythonpath = [".", "tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["text2cypher", "evals"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
+[tool.ruff]
+src = ["src", "."]
+
+[tool.ruff.lint]
+extend-select = ["B", "I", "UP", "SIM", "C4", "PTH", "RET", "RUF", "ASYNC", "PT", "TID", "TC", "FURB"]
+
+[tool.ty.environment]
+python = ".venv"
+
+[project.urls]
+Homepage = "https://github.com/Killeroid/text2cypher"
+Documentation = "https://github.com/Killeroid/text2cypher/tree/main/docs"
+Changelog = "https://github.com/Killeroid/text2cypher/blob/main/CHANGELOG.md"
+Issues = "https://github.com/Killeroid/text2cypher/issues"
+Repository = "https://github.com/Killeroid/text2cypher"
