@@ -25,7 +25,6 @@ exclude_patterns = [
     "decisions.md",
     "development-log.md",
     "refactor-plan.md",
-    "upstream-requests.md",
 ]
 
 # The guides are Markdown; link to `#anchors` of headings down to ### from other pages
