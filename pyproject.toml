@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
     "cypher-guardrail>=1.3.0",
     "falkordb>=1.8.0",
+    "snowballstemmer>=3.1.1",
 ]
 keywords = ["cypher", "text2cypher", "falkordb", "llm", "knowledge-graph", "openCypher", "graphdb"]
 classifiers = [
