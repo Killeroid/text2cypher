@@ -4,7 +4,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## Unreleased
 
-First development version; nothing is released yet.
+## 0.1.0 - 2026-10-20
+
+The first release. It is alpha: the public names are pinned by a test, but the prompts, the defaults and the schema filter are likely to change as they meet more models and larger graphs.
 
 ### Added
 
