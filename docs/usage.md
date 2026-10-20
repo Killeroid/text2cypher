@@ -2,10 +2,10 @@
 
 ## Installation
 
-Python 3.12 or later. text2cypher is in early development and is not on PyPI yet; install it from a checkout:
+Python 3.12 or later.
 
 ```sh
-uv add ./text2cypher        # or: pip install ./text2cypher
+uv add text2cypher        # or: pip install text2cypher
 ```
 
 You need a FalkorDB graph that has data, reachable with the async client (`falkordb.asyncio`), and a model. The included client uses OpenAI's API and reads `OPENAI_API_KEY`; see [](llm.md) for other models.
