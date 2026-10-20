@@ -1,0 +1,68 @@
+# Lints, type checks and tests text2cypher on every pull request and every push to main.
+#
+# The tests run against FalkorDBLite (an embedded FalkorDB), which ships wheels for Python 3.12 and newer only.
+# So the whole suite runs on 3.12, 3.13 and 3.14
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.3.0
+
+      - name: Install the locked environment
+        run: uv sync --locked
+
+      - name: Lint, format, type check and test
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run ty check
+          uv run lint-imports
+
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.3.0
+
+      - name: Install the locked environment
+        run: uv sync --locked
+
+      - name: Lint, format, type check and test
+        run: uv run pytest
+
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.3.0
+
+      - name: Install the locked environment with the docs group
+        run: uv sync --locked --group docs
+
+      - name: Build the documentation, failing on any warning
+        run: uv run sphinx-build -W --keep-going docs docs/_build/html

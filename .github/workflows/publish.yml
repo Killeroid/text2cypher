@@ -1,0 +1,81 @@
+# Builds and publishes text2cypher to PyPI when a version tag (v1.0.0, v1.1.0rc1, ...) is pushed.
+#
+# Publishing uses PyPI "trusted publishing": no token is stored. Set it up once on PyPI
+# (Account > Publishing, or the project's Publishing page) with:
+#   owner: Killeroid   repository: text2cypher   workflow: publish.yml   environment: pypi
+# The job that publishes runs in the GitHub environment `pypi`, where you can require a reviewer.
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v[0-9]*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.3.0
+
+      - name: The tag must be the version in pyproject.toml
+        run: |
+          version="v$(uv version --short)"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::The tag is $GITHUB_REF_NAME but pyproject.toml says $version"
+            exit 1
+          fi
+
+      - name: Install the locked environment
+        run: uv sync --locked
+
+      - name: Lint, format, type check and test
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run ty check
+          uv run lint-imports
+          uv run coverage run -m pytest
+          uv run coverage report
+
+      - name: Build the sdist and the wheel
+        run: uv build
+
+      - name: Install the wheel in a clean environment and import it
+        run: |
+          uv run --isolated --no-project --with dist/*.whl python -c "
+          import importlib.metadata as metadata
+          import text2cypher
+          assert text2cypher.__version__ == metadata.version('text2cypher') != 'unknown', text2cypher.__version__
+          print('text2cypher', text2cypher.__version__)"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/text2cypher/
+    permissions:
+      id-token: write # trusted publishing
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - uses: astral-sh/setup-uv@v10.3.0
+
+      - name: Publish
+        run: uv publish --trusted-publishing always

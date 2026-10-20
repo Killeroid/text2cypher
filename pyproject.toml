@@ -44,6 +44,7 @@ dev = [
     "coverage>=7.16.2",
     "falkordblite; python_version >= '3.12'",
     "httpx2>=2.13.1",
+    "import-linter>=2.15",
     "pytest>=9.1.1",
     "ruff>=0.17.0",
     "ty>=0.0.87",
@@ -75,10 +76,38 @@ skip_empty = true
 src = ["src", "."]
 
 [tool.ruff.lint]
-extend-select = ["B", "I", "UP", "SIM", "C4", "PTH", "RET", "RUF", "ASYNC", "PT", "TID", "TC", "FURB"]
+extend-select = ["B", "I", "UP", "SIM", "C4", "C90", "PTH", "RET", "RUF", "ASYNC", "PT", "TID", "TC", "FURB"]
+
+[tool.ruff.lint.mccabe]
+# A function this complex is doing more than one thing: split it
+max-complexity = 10
+
+[tool.importlinter]
+root_packages = ["text2cypher", "evals"]
+
+# Each layer may use the ones below it, never the ones above: the entry point uses the loop,
+# the loop uses generation and validation, and those use the LLM protocol and the schema.
+[[tool.importlinter.contracts]]
+name = "The layers of the package"
+type = "layers"
+layers = [
+    "text2cypher._pipeline",
+    "text2cypher._workflow",
+    "text2cypher._generation | text2cypher._execution | text2cypher._schema_source",
+    "text2cypher._results",
+    "text2cypher._validation",
+    "text2cypher.llm | text2cypher.schema | text2cypher._config | text2cypher._errors",
+]
+
+[[tool.importlinter.contracts]]
+name = "The package does not use the trial harness"
+type = "forbidden"
+source_modules = ["text2cypher"]
+forbidden_modules = ["evals"]
 
 [tool.ty.environment]
 python = ".venv"
+
 
 [project.urls]
 Homepage = "https://github.com/Killeroid/text2cypher"
