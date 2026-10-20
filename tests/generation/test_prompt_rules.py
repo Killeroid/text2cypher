@@ -15,6 +15,7 @@ from falkordb.asyncio.graph import AsyncGraph
 from text2cypher._generation.prompts import (
     EXAMPLE_QUERY,
     FULLTEXT_EXAMPLE,
+    PARAMETER_EXAMPLE,
     SHORTEST_PATH_EXAMPLE,
 )
 from text2cypher._validation import QueryValidator
@@ -180,3 +181,77 @@ async def test_a_vector_query_is_valid_so_only_the_prompt_keeps_the_model_from_i
     )
 
     assert await codes(falkordb_client, indexed.name, query) == []
+
+
+@pytest.fixture
+async def with_a_function(falkordb_client: FalkorDB, cities: str) -> AsyncIterator[str]:
+    """The cities graph, on an instance that has one user-defined function."""
+    await falkordb_client.connection.execute_command(
+        "GRAPH.UDF",
+        "LOAD",
+        "REPLACE",
+        "rules_lib",
+        "function double(x) { return x * 2; } falkor.register('double', double);",
+    )
+    yield cities
+    await falkordb_client.connection.execute_command("GRAPH.UDF", "DELETE", "rules_lib")
+
+
+async def test_a_listed_function_is_valid_and_runs_and_another_is_not(
+    falkordb_client, with_a_function
+):
+    graph = falkordb_client.select_graph(with_a_function)
+    listed = "MATCH (c:City {name: 'Paris'}) RETURN rules_lib.double(2)"
+    unlisted = "MATCH (c:City {name: 'Paris'}) RETURN rules_lib.triple(2)"
+
+    assert await codes(falkordb_client, with_a_function, listed) == []
+    assert (await graph.ro_query(listed)).result_set == [[4]]
+    assert set(await codes(falkordb_client, with_a_function, unlisted)) == {
+        cg.UNKNOWN_FUNCTION_ERROR,
+        cg.UNKNOWN_FUNCTION,
+    }
+
+
+async def test_the_parameter_example_is_valid_and_runs(falkordb_client, cities):
+    graph = falkordb_client.select_graph(cities)
+    await graph.query("CREATE (:Person {name: 'Ann', born: 1990})")
+    query = PARAMETER_EXAMPLE
+
+    assert await codes(falkordb_client, cities, query) == []
+    assert (await graph.ro_query(query)).result_set == [[1990]]
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "CYPHER name='Paris', year=1999 MATCH (c:City {name: $name}) RETURN c",
+            [cg.SYNTAX_ERROR],
+        ),
+        (
+            "CYPHER name='Paris' MATCH (c:City {name: $other}) RETURN c",
+            [cg.PARAMETER_NOT_PROVIDED],
+        ),
+        ('CYPHER title="You\'ve" MATCH (c:City {name: $title}) RETURN c', []),
+        (
+            "CYPHER names=['Paris'] MATCH (c:City) WHERE c.name IN $names RETURN c.name",
+            [],
+        ),
+        ("CYPHER n=1 MATCH (c:City) RETURN c.name LIMIT $n", []),
+    ],
+    ids=[
+        "commas",
+        "a parameter that is not in the header",
+        "an apostrophe",
+        "a list",
+        "limit",
+    ],
+)
+async def test_what_the_parameter_rule_says_about_the_header(
+    falkordb_client, cities, query, expected
+):
+    got = await codes(falkordb_client, cities, query)
+
+    assert [code.rsplit(".", 1)[-1] for code in got] == [
+        code.rsplit(".", 1)[-1] for code in expected
+    ]

@@ -23,10 +23,18 @@ class Generation:
 
 
 async def generate_cypher(
-    llm: AsyncLLMClient, schema: GraphSchema, question: str
+    llm: AsyncLLMClient,
+    schema: GraphSchema,
+    question: str,
+    *,
+    parameterize: bool = False,
 ) -> Generation:
     """A query for ``question`` over ``schema``; empty if the LLM says it has none."""
-    return await _ask(llm, generator_system(schema), generator_user(question))
+    return await _ask(
+        llm,
+        generator_system(schema, parameterize=parameterize),
+        generator_user(question),
+    )
 
 
 async def correct_cypher(
@@ -35,6 +43,8 @@ async def correct_cypher(
     question: str,
     query: str,
     issues: Iterable[Issue],
+    *,
+    parameterize: bool = False,
 ) -> Generation:
     """A corrected ``query``; empty if the LLM says the question cannot be answered.
 
@@ -42,7 +52,9 @@ async def correct_cypher(
     message differs.
     """
     return await _ask(
-        llm, generator_system(schema), corrector_user(question, query, issues, schema)
+        llm,
+        generator_system(schema, parameterize=parameterize),
+        corrector_user(question, query, issues, schema, parameterize=parameterize),
     )
 
 

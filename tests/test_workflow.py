@@ -322,3 +322,22 @@ async def test_after_declining_on_the_filtered_schema_later_corrections_use_the_
 
     assert [a.schema_scope for a in result.attempts] == ["filtered", "full", "full"]
     assert {c.system for c in llm.calls[1:]} == {generator_system(FULL)}
+
+
+async def test_parameters_change_the_system_prompt_of_every_request():
+    llm = FakeLLM([reply("a"), reply("b")])
+
+    await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(invalid("x"), VALID),
+        config=Config(use_parameters=True),
+    )
+
+    assert [c.system for c in llm.calls] == [
+        generator_system(FULL, parameterize=True)
+    ] * 2
+    assert llm.calls[1].user == corrector_user(
+        "Q", "a", invalid("x").issues, FULL, parameterize=True
+    )

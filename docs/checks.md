@@ -29,13 +29,13 @@ A query that can write to the graph is never valid.
 | properties | `UnknownPropertyKey` | No node or relationship has this property. |
 | properties | `InvalidPropertyAccess` | The label or relationship type (`kind`, `name`) does not have the property. |
 
-Two groups of issues are reported only when you ask, with `Config(check_types=True)` and `Config(check_performance=True)`. They are heuristics, so each can report a query that is fine, and like every issue they are corrected:
+Two groups of issues come from options of `Config`. `check_types` is on: a query it reports fails or returns nothing. `check_performance` is off, because each of its warnings can be what the question needs. Like every issue they are corrected:
 
 | Option | Code (after the prefix) | Meaning |
 |---|---|---|
 | `check_types` | `PropertyTypeMismatch` | A property is compared with a value of a type none of its values has: `WHERE p.born = 'old'`. |
 | `check_types` | `AggregateTypeMismatch` | `sum`, `avg`, `stDev` or the like is called on a property that holds no numbers, which FalkorDB fails on when it runs the query. |
-| `check_performance` | `CartesianProduct` | Two patterns are not connected, so every row of one is paired with every row of the other. A shortest path between two nodes is one on purpose, so this option is off by default. |
+| `check_performance` | `CartesianProduct` | Two patterns are not connected, so every row of one is paired with every row of the other. A shortest path between two nodes is one on purpose, which is why this option is off by default. |
 | `check_performance` | `UnlabeledNodeScan` | A node with no label is matched, so every node is read. |
 | `check_performance` | `UnboundedPath` | A variable-length path has no upper bound. |
 

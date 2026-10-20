@@ -6,7 +6,7 @@ from text2cypher.schema._model import GraphSchema, Index, quote_identifier
 
 
 def render_schema(schema: GraphSchema) -> str:
-    """Describe ``schema`` as node properties, relationship properties, paths and indexes.
+    """Describe ``schema`` as node properties, relationship properties, paths, indexes and functions.
 
     Sections with nothing to say are left out, so an empty schema renders as "".
     """
@@ -27,6 +27,8 @@ def render_schema(schema: GraphSchema) -> str:
         )
     if schema.indexes:
         sections.append("Indexes:\n" + _indexes(schema.indexes))
+    if schema.functions:
+        sections.append("User-defined functions:\n" + "\n".join(schema.functions))
     return "\n".join(sections)
 
 

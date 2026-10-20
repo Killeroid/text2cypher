@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 from cypher_guardrail import issues as cg
 from support import FILM_SCHEMA, make_issue
@@ -5,6 +7,7 @@ from support import FILM_SCHEMA, make_issue
 from text2cypher import GraphSchema
 from text2cypher._generation.prompts import (
     FULLTEXT_EXAMPLE,
+    PARAMETER_EXAMPLE,
     corrector_user,
     generator_system,
     generator_user,
@@ -99,6 +102,19 @@ def test_a_fulltext_index_adds_the_rule_about_searching_words():
     assert "toLower(p.name)" not in system
 
 
+def test_user_defined_functions_add_the_rule_to_call_only_those():
+    schema = replace(SCHEMA, functions=("lib.double",))
+
+    system = generator_system(schema)
+
+    assert "User-defined functions:\nlib.double" in system
+    assert "Call only the ones listed" in system
+
+
+def test_a_schema_without_functions_has_no_function_rule():
+    assert "user-defined" not in generator_system(SCHEMA).lower()
+
+
 def test_a_vector_index_adds_the_rule_not_to_query_it():
     system = generator_system(with_indexes(Index("Doc", "embedding", "VECTOR")))
 
@@ -118,3 +134,23 @@ def test_the_rules_come_before_the_reply_format_and_the_schema():
 
 def test_not_equal_is_written_with_the_operator_cypher_has():
     assert "<>" in generator_system(SCHEMA)
+
+
+def test_values_are_written_in_the_query_unless_parameters_are_asked_for():
+    system = generator_system(SCHEMA)
+
+    assert "Write values inside the query. Do not use $parameters." in system
+    assert "CYPHER header" not in system
+
+
+def test_parameters_replace_the_rule_about_inline_values():
+    system = generator_system(SCHEMA, parameterize=True)
+
+    assert "Write values inside the query" not in system
+    assert "CYPHER header" in system
+    assert PARAMETER_EXAMPLE in system
+    assert system.index("CYPHER header") < system.index("Reply with the query in one")
+
+
+def test_a_correction_uses_the_same_rules_as_the_first_query():
+    assert generator_system(SCHEMA, parameterize=True) != generator_system(SCHEMA)

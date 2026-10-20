@@ -145,9 +145,11 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 - **Validity** is `syntax_ok and not issues`, never derived from scores. A schema score of 1 or a properties score
   of `None` with no issues means "nothing to check", not "correct". Scores stay on `ValidationResult` as metrics.
 - **Two optional checks.** `Config.check_types` (property type mismatches, aggregates of non-numbers) and
-  `Config.check_performance` (cartesian product, unlabeled scan, unbounded path) are passed to the validators and are off
-  by default: each can report a query that is fine (a shortest path between two nodes is a cartesian product by design, and
-  our own prompt example is one). A warning from them is corrected like any other issue.
+  `Config.check_performance` (cartesian product, unlabeled scan, unbounded path) are passed to the validators. `check_types`
+  is on: it reported nothing on 33 recorded real-model runs and the 40 gold queries of both trial graphs, and what it reports
+  fails or returns nothing. `check_performance` is off: each of its warnings can be what the question needs (a shortest path
+  between two nodes is a cartesian product by design, and our own prompt example is one). A warning from either is corrected
+  like any other issue.
 - **No severity levels.** Every reported issue triggers a correction. The candidates for a "warning" are all
   defects here (`ParameterNotProvided`: we execute without parameters; `UnknownIndex`: the query would return
   nothing or fail). Add severity only if a real non-blocking case appears.
@@ -218,11 +220,18 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   examples on another schema and the rendered schema; the user message is only the question, so the question is
   never in the system prompt and the system prompt has a stable prefix. The corrector reuses that system prompt and
   sends the question, the failed query in a fence and its issues as a list in the user message.
-- **Rules block**: read-only; write values inline and never `$param` (a bare `$n` is `ParameterNotProvided`); for a
+- **Rules block**: read-only; write values inline and never `$param` (a bare `$n` is `ParameterNotProvided`), unless
+  `Config.use_parameters` swaps that rule for one that asks for the values in a `CYPHER` header (see Parameters); for a
   shortest path between two nodes use `algo.SPpaths`, since FalkorDB supports `shortestPath` only in `WITH` or
   `RETURN`; return readable fields, not a bare path or whole nodes. Every rule is checked on an embedded FalkorDB by
   `tests/generation/test_prompt_rules.py`, and so is every query the prompt shows. Not-equal is written `<>`
   (`!=` is a syntax error in FalkorDB).
+- **Parameters** (`Config.use_parameters`, off): the values go in a `CYPHER` header, `CYPHER name='Ann' year=1990 MATCH (p:Person {name: $name}) ...`. Checked on FalkorDB:
+  pairs are separated by spaces (commas are a syntax error), strings, numbers, lists and `LIMIT $n` work, text with an apostrophe needs double quotes, a `$x` not in the header is
+  `ParameterNotProvided`, and the whole query validates and runs read-only as one string, so `Result.query` needs no splitting. The corrector's wording for a missing value says
+  to give it one in the header. FalkorDB can plan such a query once and reuse the plan; that is the whole benefit, so the option is off.
+- **User-defined functions**: the snapshot's `udfs` become `GraphSchema.functions`, listed in the prompt with the rule to call only those listed; an unknown dotted function is reported
+  by both validators and worded with the closest listed name and the list.
 - **Index rules**, added only for the kinds of index the schema has (which is also listed under `Indexes:`). Checked on
   FalkorDB with `EXPLAIN`: `=` (also the inline `{name: 'x'}` form), `<`, `<=`, `>`, `>=`, `IN` and an `OR` of
   indexed properties use the index; `<>`, `NOT`, `STARTS WITH`, `CONTAINS`, a function (`toLower`) and arithmetic on the
@@ -317,8 +326,6 @@ Each item says what would bring it back.
 **Left out of the prompt, each until evaluation or a feature needs it**
 - `toLower()` guidance beyond the index rule: a function on an indexed property prevents index use, but a
   case-insensitive match is often what the question means. Decide with the harness.
-- Parameters through the `CYPHER` header (plan caching, injection safety): matters once execution is used at
-  volume.
 - More path guidance (`algo.SSpaths`, weighted paths, `pathCount`, bounded variable-length paths); `LIMIT`
   guidance (adding a limit the question did not ask for changes the answer).
 - A validation checklist inside the prompt (it adds tokens for checks the validator does).
@@ -331,8 +338,6 @@ Each item says what would bring it back.
 - A model without a system role: an option on `OpenAIClient` that sends one user message.
 
 **Other**
-- Turning `check_types` on by default: it reported nothing on the gold queries of both trial graphs, but it has not been tried with a model.
-- Listing the functions of the instance (`Snapshot.udfs`, new in cypher-guardrail 1.4) in the prompt, so the LLM can use them.
 - Embedding similarity for the lexical filter (a heavy dependency, would be an extra) and property-name matching:
   when the filter's miss rate justifies them.
 - Feeding a runtime failure or an empty result back to the corrector; a row limit; converting rows to plain Python.

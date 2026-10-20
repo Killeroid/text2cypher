@@ -9,7 +9,7 @@ from text2cypher.schema._model import GraphSchema, Index, Path
 
 
 def schema_from_snapshot(snapshot: Snapshot) -> GraphSchema:
-    """The labels, relationship types, properties, paths and indexes recorded in ``snapshot``.
+    """The labels, relationship types, properties, paths, indexes and functions recorded in ``snapshot``.
 
     Capture the snapshot with ``types=True``: the value types of each property come
     from it. The snapshot records an edge between sets of labels, so a node with
@@ -30,6 +30,7 @@ def schema_from_snapshot(snapshot: Snapshot) -> GraphSchema:
         relationship_properties=relationship_properties,
         paths=_paths(snapshot.edges),
         indexes=_indexes(snapshot.indexes),
+        functions=_functions(snapshot.udfs),
     )
 
 
@@ -76,6 +77,19 @@ def _indexes(indexes: Iterable[Any]) -> tuple[Index, ...]:
                 if _usable(attribute)
                 for index_type in index_types
             }
+        )
+    )
+
+
+def _functions(udfs: Iterable[Any] | None) -> tuple[str, ...]:
+    """The user-defined functions as ``library.function``, if the snapshot has them."""
+    return tuple(
+        sorted(
+            f"{library}.{function}"
+            for library, functions in udfs or ()
+            if _usable(library)
+            for function in functions
+            if _usable(function)
         )
     )
 

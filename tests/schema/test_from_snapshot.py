@@ -178,3 +178,24 @@ def test_an_index_on_a_name_with_a_backtick_is_left_out_like_the_name():
     )
 
     assert schema_from_snapshot(snapshot).indexes == (Index("Fine", "y", "RANGE"),)
+
+
+def test_the_user_defined_functions_of_a_snapshot_are_in_the_schema():
+    snapshot = Snapshot.from_schema(
+        nodes={"A": ["x"]},
+        relationships=[],
+        node_property_types={"A": {"x": ["String"]}},
+        udfs={"b": ["g"], "a": ["f", "e"]},
+    )
+
+    assert schema_from_snapshot(snapshot).functions == ("a.e", "a.f", "b.g")
+
+
+def test_a_snapshot_that_did_not_capture_the_functions_gives_none():
+    snapshot = Snapshot.from_schema(
+        nodes={"A": ["x"]},
+        relationships=[],
+        node_property_types={"A": {"x": ["String"]}},
+    )
+
+    assert schema_from_snapshot(snapshot).functions == ()

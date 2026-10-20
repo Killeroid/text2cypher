@@ -367,6 +367,37 @@ async def test_the_performance_check_makes_the_loop_correct_a_cartesian_product(
     assert "are not connected" in llm.calls[1].user
 
 
+async def test_a_sum_of_text_is_corrected_without_asking_for_the_type_check(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    llm = FakeLLM(
+        [
+            reply("MATCH (m:Movie) RETURN sum(m.title)"),
+            reply("MATCH (m:Movie) RETURN sum(m.year)"),
+        ]
+    )
+
+    result = await Text2Cypher(falkordb_client, llm).run(
+        "Total of the years?", movies_graph
+    )
+
+    assert result.status == "valid"
+    assert len(result.attempts) == 2
+
+
+async def test_the_type_check_can_be_turned_off(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    llm = FakeLLM([reply("MATCH (m:Movie) RETURN sum(m.title)")])
+
+    result = await Text2Cypher(
+        falkordb_client, llm, config=Config(check_types=False)
+    ).run("Total of the titles?", movies_graph)
+
+    assert result.status == "valid"
+    assert len(result.attempts) == 1
+
+
 async def test_the_type_check_makes_the_loop_correct_a_sum_of_text(
     falkordb_client: FalkorDB, movies_graph: str
 ):
@@ -383,3 +414,45 @@ async def test_the_type_check_makes_the_loop_correct_a_sum_of_text(
 
     assert result.status == "valid"
     assert "`sum` needs numbers" in llm.calls[1].user
+
+
+async def test_the_user_defined_functions_of_the_instance_are_in_the_prompt(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    await falkordb_client.connection.execute_command(
+        "GRAPH.UDF",
+        "LOAD",
+        "REPLACE",
+        "pipeline_lib",
+        "function double(x) { return x * 2; } falkor.register('double', double);",
+    )
+    try:
+        llm = FakeLLM([reply("MATCH (m:Movie) RETURN pipeline_lib.double(m.year)")])
+
+        result = await Text2Cypher(falkordb_client, llm).run(
+            "Double the years", movies_graph
+        )
+    finally:
+        await falkordb_client.connection.execute_command(
+            "GRAPH.UDF", "DELETE", "pipeline_lib"
+        )
+
+    assert result.status == "valid"
+    assert "User-defined functions:\npipeline_lib.double" in llm.calls[0].system
+
+
+async def test_a_query_with_a_parameter_header_is_validated_and_executed(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    query = "CYPHER name='Keanu' MATCH (p:Person {name: $name}) RETURN p.name"
+    llm = FakeLLM([reply(query)])
+
+    result = await Text2Cypher(
+        falkordb_client, llm, config=Config(use_parameters=True, execute=True)
+    ).run("Who is Keanu?", movies_graph)
+
+    assert result.status == "valid"
+    assert result.query == query
+    assert result.records is not None
+    assert result.records.rows == (("Keanu",),)
+    assert "CYPHER header" in llm.calls[0].system

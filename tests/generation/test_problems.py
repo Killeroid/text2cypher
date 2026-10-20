@@ -434,3 +434,33 @@ def test_an_aggregate_of_text_says_what_the_property_holds():
         "- `sum` needs numbers, but `Person.name` holds only String values. "
         "Use a property that holds numbers."
     )
+
+
+def test_an_unknown_function_lists_the_user_defined_ones_and_the_closest():
+    schema = GraphSchema(
+        node_properties={"A": {}},
+        relationship_properties={},
+        paths=(),
+        functions=("mylib.double", "mylib.halve"),
+    )
+
+    text = problems([make_issue(cg.UNKNOWN_FUNCTION, "x", name="mylib.doubel")], schema)
+
+    assert text == (
+        "- There is no function `mylib.doubel` in this FalkorDB. Use only functions that exist.\n"
+        "  Did you mean `mylib.double`?\n"
+        "  The user-defined functions are: mylib.double, mylib.halve."
+    )
+
+
+def test_a_parameter_without_a_value_is_told_to_get_one_in_the_header_when_parameters_are_used():
+    issue = make_issue(
+        cg.PARAMETER_NOT_PROVIDED, "x", source="syntax", parameters=["name"]
+    )
+
+    text = problems([issue], SCHEMA, parameterized=True)
+
+    assert text == (
+        "- The query uses the parameter `$name`, which has no value. "
+        "Give it one in the CYPHER header before the query."
+    )

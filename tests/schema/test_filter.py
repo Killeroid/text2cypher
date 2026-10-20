@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from text2cypher.schema import GraphSchema, Index, Path, filter_schema
 
 SCHEMA = GraphSchema(
@@ -138,3 +140,12 @@ def test_the_indexes_of_what_is_kept_are_kept_and_the_others_go():
         Index("Movie", "title", "FULLTEXT"),
         Index("MADE_BY", "since", "RANGE"),
     }
+
+
+def test_the_functions_of_the_instance_are_kept_whatever_the_question_matches():
+    with_functions = replace(SCHEMA, functions=("lib.f",))
+
+    kept = filter_schema(with_functions, "Which studios exist?")
+
+    assert kept.functions == ("lib.f",)
+    assert len(kept.node_properties) < len(with_functions.node_properties)

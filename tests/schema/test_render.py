@@ -101,3 +101,25 @@ def test_render_schema_lists_the_indexes_in_order_whatever_order_they_come_in():
     )
 
     assert render_schema(schema).endswith("Indexes:\nA.x: RANGE, VECTOR\nB.y: RANGE")
+
+
+def test_render_schema_lists_the_user_defined_functions_last():
+    schema = GraphSchema(
+        node_properties={"A": {}},
+        relationship_properties={},
+        paths=(),
+        indexes=(Index("A", "x", "RANGE"),),
+        functions=("lib.f", "lib.g"),
+    )
+
+    assert render_schema(schema).endswith(
+        "Indexes:\nA.x: RANGE\nUser-defined functions:\nlib.f\nlib.g"
+    )
+
+
+def test_render_schema_has_no_function_section_without_functions():
+    schema = GraphSchema(
+        node_properties={"A": {}}, relationship_properties={}, paths=()
+    )
+
+    assert "User-defined" not in render_schema(schema)

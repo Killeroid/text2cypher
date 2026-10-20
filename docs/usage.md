@@ -80,8 +80,9 @@ agent = Text2Cypher(client, llm, config=Config(attempts_w_filtered=2, total_atte
 | `total_attempts` | `5` | Corrections in all, filtered and full. The first query is not a correction, so the LLM is asked at most `total_attempts + 1` times (plus one retry on the full schema if it declines on the filtered one). |
 | `execute` | `False` | Run the final query, see below. |
 | `execute_timeout_ms` | `10000` | Stop an execution after this many milliseconds; `None` for no limit. |
-| `check_types` | `False` | Also report a property compared with a value of another type, and `sum`, `avg` and the like of a property that holds no numbers. See [](checks.md). |
-| `check_performance` | `False` | Also report a cartesian product, a scan of every node and a path with no upper bound. See [](checks.md). |
+| `check_types` | `True` | Report a property compared with a value of another type, and `sum`, `avg` and the like of a property that holds no numbers. See [](checks.md). |
+| `check_performance` | `False` | Report a cartesian product, a scan of every node and a path with no upper bound. See [](checks.md). |
+| `use_parameters` | `False` | The LLM puts the values in a `CYPHER` header and uses parameters, which FalkorDB can plan once and reuse. `Result.query` is still one string that runs as it is. |
 | `schema_refresh_seconds` | `None` | Keep a graph's schema and check it for changes at most this often; `None` reads it on every run. See [](schema.md). |
 
 `Config` rejects negative values and `total_attempts < attempts_w_filtered`.

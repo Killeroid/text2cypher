@@ -41,7 +41,9 @@ _SURE, _LIKELY, _PREFIX = 0.75, 0.6, 3
 type Fields = Mapping[str, Any]
 
 
-def problems(issues: Iterable[Issue], schema: GraphSchema) -> str:
+def problems(
+    issues: Iterable[Issue], schema: GraphSchema, *, parameterized: bool = False
+) -> str:
     """One bullet per distinct problem, with its hint lines, for the corrector prompt."""
     issues = list(issues)
     # "No label has this property" says less than "this label has no such property"
@@ -53,7 +55,7 @@ def problems(issues: Iterable[Issue], schema: GraphSchema) -> str:
     }
     return "\n".join(
         dict.fromkeys(
-            _describe(issue, schema)
+            _describe(issue, schema, parameterized)
             for issue in issues
             if not (
                 issue.code == UNKNOWN_PROPERTY and issue.fields["property"] in named
@@ -62,7 +64,9 @@ def problems(issues: Iterable[Issue], schema: GraphSchema) -> str:
     )
 
 
-def _describe(issue: Issue, schema: GraphSchema) -> str:
+def _describe(issue: Issue, schema: GraphSchema, parameterized: bool) -> str:
+    if issue.code == PARAMETER_NOT_PROVIDED:
+        return _parameter_without_value(issue.fields, parameterized)
     handler = _HANDLERS.get(issue.code)
     if handler and (text := handler(issue.fields, schema)):
         return text
@@ -110,13 +114,17 @@ def _unknown_relationship_type(raw: Fields, schema: GraphSchema) -> str:
     )
 
 
-def _parameter_without_value(raw: Fields, schema: GraphSchema) -> str:
+def _parameter_without_value(raw: Fields, parameterized: bool) -> str:
     names = [f"`${name}`" for name in raw["parameters"]]
     many = len(names) > 1
+    fix = (
+        "Give it one in the CYPHER header before the query."
+        if parameterized
+        else "Write the value in the query instead."
+    )
     return (
         f"- The query uses the {'parameters' if many else 'parameter'} "
-        f"{', '.join(names)}, which {'have' if many else 'has'} no value. "
-        "Write the value in the query instead."
+        f"{', '.join(names)}, which {'have' if many else 'has'} no value. {fix}"
     )
 
 
@@ -128,7 +136,13 @@ def _unbound_variable(raw: Fields, schema: GraphSchema) -> str:
 
 
 def _unknown_function(raw: Fields, schema: GraphSchema) -> str:
-    return f"- There is no function `{raw['name']}` in this FalkorDB. Use only functions that exist."
+    name = raw["name"]
+    text = f"- There is no function `{name}` in this FalkorDB. Use only functions that exist."
+    if close := _closest(name, schema.functions):
+        text += f"\n  Did you mean `{close}`?"
+    if schema.functions:
+        text += f"\n  The user-defined functions are: {', '.join(schema.functions)}."
+    return text
 
 
 def _invalid_limit(raw: Fields, schema: GraphSchema) -> str:
@@ -249,7 +263,6 @@ _HANDLERS: dict[str, Callable[[Fields, GraphSchema], str | None]] = {
     UNKNOWN_PROPERTY: _unknown_property,
     INVALID_PROPERTY_ACCESS: _invalid_property_access,
     UNKNOWN_PATH: _unknown_path,
-    PARAMETER_NOT_PROVIDED: _parameter_without_value,
     WRITE_QUERY_ERROR: _write_query,
     UNBOUND_VARIABLE_ERROR: _unbound_variable,
     UNKNOWN_FUNCTION_ERROR: _unknown_function,

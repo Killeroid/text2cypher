@@ -53,7 +53,9 @@ async def run_workflow(
         scope, used = _choose_schema(
             schema, filtered, config, corrections=corrections, escalated=escalated
         )
-        generation = await _write(llm, question, used, failed)
+        generation = await _write(
+            llm, question, used, failed, parameterize=config.use_parameters
+        )
         if not generation.query:
             attempts.append(Attempt("", None, scope, generation.usage))
             if scope == "full":
@@ -91,9 +93,16 @@ def _choose_schema(
 
 
 async def _write(
-    llm: AsyncLLMClient, question: str, schema: GraphSchema, failed: _Failed | None
+    llm: AsyncLLMClient,
+    question: str,
+    schema: GraphSchema,
+    failed: _Failed | None,
+    *,
+    parameterize: bool,
 ) -> Generation:
     """The first query, or a correction of the one that failed."""
     if failed is None:
-        return await generate_cypher(llm, schema, question)
-    return await correct_cypher(llm, schema, question, failed.query, failed.issues)
+        return await generate_cypher(llm, schema, question, parameterize=parameterize)
+    return await correct_cypher(
+        llm, schema, question, failed.query, failed.issues, parameterize=parameterize
+    )

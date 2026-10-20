@@ -49,7 +49,11 @@ def test_a_schema_refresh_time_cannot_be_negative():
         Config(schema_refresh_seconds=-1)
 
 
-def test_the_optional_checks_are_off_by_default():
+def test_types_are_checked_and_performance_is_not_by_default():
     config = Config()
 
-    assert (config.check_types, config.check_performance) == (False, False)
+    assert (config.check_types, config.check_performance) == (True, False)
+
+
+def test_values_are_written_in_the_query_by_default():
+    assert Config().use_parameters is False

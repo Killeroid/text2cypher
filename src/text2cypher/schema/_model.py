@@ -57,12 +57,14 @@ class GraphSchema:
         relationship_properties: The properties of each relationship type.
         paths: The one-hop paths that exist.
         indexes: The indexes on properties of labels and relationship types.
+        functions: The user-defined functions of the FalkorDB instance, as ``library.function``.
     """
 
     node_properties: Mapping[str, Mapping[str, tuple[str, ...]]]
     relationship_properties: Mapping[str, Mapping[str, tuple[str, ...]]]
     paths: tuple[Path, ...]
     indexes: tuple[Index, ...] = ()
+    functions: tuple[str, ...] = ()
 
 
 def quote_identifier(name: str) -> str:

@@ -4,6 +4,19 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## Unreleased
 
+### Added
+
+- The user-defined functions of the FalkorDB instance (`GraphSchema.functions`) are in the schema the LLM is shown, with the rule to call only those listed; an unknown
+  function is reported with the closest listed name and the list.
+- `Config(use_parameters=True)`: the LLM puts the values of the question in a `CYPHER` header and uses parameters, which FalkorDB can plan once and reuse. `Result.query` is
+  still one string that runs as it is. Off by default.
+
+### Changed
+
+- `Config.check_types` is now on by default: a property compared with a value of another type, and `sum`, `avg` and the like of a property that holds no numbers, are reported and
+  corrected, because such a query fails or returns nothing. It reported nothing on recorded real-model runs and on the gold queries of both trial graphs. Pass
+  `Config(check_types=False)` for the old behaviour.
+
 ## 1.0.0 - 2026-10-20
 
 The first stable release. From here the public names (`text2cypher.__all__`, `text2cypher.llm` and `text2cypher.schema`) follow [semantic versioning](https://semver.org/): a breaking change to them needs a new major version. The prompts and the way the schema filter matches are not part of that promise and can change in a minor version. They have been tried with Claude Haiku on two small test graphs; see "Known limits" in the README.

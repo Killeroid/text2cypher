@@ -52,6 +52,7 @@ def _restrict(schema: GraphSchema, labels: set[str], types: set[str]) -> GraphSc
         relationship_properties=_only(schema.relationship_properties, kept_types),
         paths=paths,
         indexes=tuple(index for index in schema.indexes if index.entity in kept),
+        functions=schema.functions,  # they belong to the instance, not to a label
     )
 
 

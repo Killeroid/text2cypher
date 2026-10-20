@@ -7,6 +7,7 @@ FalkorDB has no declared schema, so text2cypher describes the graph by what it c
 * `node_properties`: for each label, its properties, each with the types of its values (`{"year": ("Integer",)}`; a property with mixed values lists them all);
 * `relationship_properties`: the same for each relationship type;
 * `paths`: the one-hop paths that exist, as `Path(source, type, target)`. A node with several labels gives one path per label.
+* `functions`: the user-defined functions of the FalkorDB instance (`library.function`), listed under `User-defined functions:` in the prompt with the rule to call only those listed. They belong to the instance, so the filter keeps all of them.
 * `indexes`: the indexes on properties, as `Index(entity, property, type)` with `type` one of `RANGE`, `FULLTEXT` or `VECTOR`. They are listed under `Indexes:` in the prompt, and the prompt gets a rule for each kind that exists: compare an indexed property directly (`=`, `<`, `>`, `IN`) because `<>`, `NOT`, `STARTS WITH`, `CONTAINS` and a function on the property cannot use the index (checked on FalkorDB); search words with `db.idx.fulltext.queryNodes` only when the question is a word search; and never call `db.idx.vector.*`, because there is no embedding for the question.
 
 Labels, relationship types and properties whose name contains a backtick are left out: FalkorDB cannot parse an escaped backtick, so no query can use them.
