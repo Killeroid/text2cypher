@@ -1,0 +1,3 @@
+```cypher
+MATCH (a:Person {name: 'Keanu Reeves'}), (b:Person {name: 'Al Pacino'}) CALL algo.SPpaths({sourceNode: a, targetNode: b, relTypes: ['KNOWS'], relDirection: 'outgoing', pathCount: 1}) YIELD path RETURN [n IN nodes(path) | n.name] AS chain
+```

@@ -1,0 +1,3 @@
+```cypher
+MATCH (p:Person)-[:DIRECTED]->(m:Movie {title: 'Heat'}) RETURN p.name
+```

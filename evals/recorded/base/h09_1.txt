@@ -1,0 +1,3 @@
+```cypher
+MATCH (u:User)-[r:REVIEWED]->(m:Movie) WHERE m.title = 'The Matrix' RETURN avg(r.stars)
+```

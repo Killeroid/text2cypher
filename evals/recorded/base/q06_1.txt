@@ -1,0 +1,5 @@
+```cypher
+MATCH (m:Movie)-[:IN_GENRE]->(g:Genre)
+RETURN g.name, COUNT(m) AS movie_count
+ORDER BY g.name
+```

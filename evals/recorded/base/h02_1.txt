@@ -1,0 +1,3 @@
+```cypher
+MATCH (p:Person)-[:BORN_IN]->(c:Country) WHERE c.name = 'Canada' RETURN p.name
+```

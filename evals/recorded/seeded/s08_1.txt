@@ -1,0 +1,3 @@
+```cypher
+MATCH (:User {name: 'Alice'})-[:REVIEWED]->(m:Movie {title: 'The Matrix'}) RETURN m.stars
+```

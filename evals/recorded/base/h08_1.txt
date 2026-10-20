@@ -1,0 +1,3 @@
+```cypher
+MATCH (p:Person)-[a:ACTED_IN]->(m:Movie) WHERE m.title = 'You\'ve Got Mail' AND a.role = 'Joe Fox' RETURN p.name
+```

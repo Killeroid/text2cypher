@@ -1,0 +1,3 @@
+```cypher
+MATCH (p:Person {name: 'Michael Mann'})-[:DIRECTED]->(m:Movie)-[:IN_GENRE]->(g:Genre) RETURN g.name
+```

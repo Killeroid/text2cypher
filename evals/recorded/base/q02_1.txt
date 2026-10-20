@@ -1,0 +1,3 @@
+```cypher
+MATCH (p:Person) WHERE p.born < 1950 RETURN p.name
+```

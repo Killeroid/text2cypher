@@ -1,0 +1,3 @@
+```cypher
+MATCH (p:Person {name: 'Keanu Reeves'})-[r:ACTED_IN]->(m:Movie {title: 'Speed'}) RETURN r.role
+```

@@ -1,0 +1,3 @@
+```cypher
+MATCH (a:Actor)-[:ACTED_IN]->(m:Movie {title: 'Heat'}) RETURN a.name
+```

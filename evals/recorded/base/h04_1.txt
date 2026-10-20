@@ -1,0 +1,7 @@
+```cypher
+MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
+WITH p, COUNT(m) AS movie_count
+ORDER BY movie_count DESC
+LIMIT 1
+RETURN p.name, movie_count
+```

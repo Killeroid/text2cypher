@@ -1,0 +1,3 @@
+```cypher
+MATCH (p:Person {name: $name})-[r:ACTED_IN]->(m:Movie {title: $title}) RETURN r.role
+```

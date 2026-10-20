@@ -1,0 +1,3 @@
+```cypher
+MATCH (:User)-[r:RATED]->(:Movie {title: 'The Matrix'}) RETURN avg(r.stars)
+```
