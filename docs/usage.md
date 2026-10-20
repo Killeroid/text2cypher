@@ -1,0 +1,126 @@
+# Using text2cypher
+
+## Installation
+
+Python 3.12 or later. text2cypher is in early development and is not on PyPI yet; install it from a checkout:
+
+```sh
+uv add ./text2cypher        # or: pip install ./text2cypher
+```
+
+You need a FalkorDB graph that has data, reachable with the async client (`falkordb.asyncio`), and a model. The included client uses OpenAI's API and reads `OPENAI_API_KEY`; see [](llm.md) for other models.
+
+## Asking a question
+
+```python
+import asyncio
+
+from falkordb.asyncio import FalkorDB
+from text2cypher import OpenAIClient, Text2Cypher
+
+
+async def main() -> None:
+    client = FalkorDB(host="localhost", port=6379)  # one client per event loop
+    agent = Text2Cypher(client, OpenAIClient("your-model"))
+
+    result = await agent.run("Which actors appeared in The Matrix?", graph="movies")
+    print(result.status)  # "valid", "unanswerable" or "failed"
+    print(result.query)
+
+    await client.aclose()
+
+
+asyncio.run(main())
+```
+
+`Text2Cypher` takes the FalkorDB client and the LLM. `run` takes the question and the name of the graph, and reads the graph's schema every time it is called. The client is bound to the event loop that first uses it, so use one `Text2Cypher` per loop. Always look at `result.status` before you use `result.query`.
+
+## The result
+
+`run` returns a {py:class}`~text2cypher.Result`:
+
+```python
+print(result.status)  # "valid"
+print(result.query)  # the last query, empty if the LLM declined
+print(
+    result.usage
+)  # Usage(input_tokens=310, output_tokens=24), or None if a call did not report it
+
+for attempt in result.attempts:  # every query, in order
+    print(
+        attempt.schema_scope
+    )  # "filtered" or "full": the schema this query was written for
+    print(attempt.query)
+    if attempt.validation:  # None when the query is empty
+        print(attempt.validation.valid, attempt.validation.issues)
+    print(attempt.usage)
+```
+
+| `status` | Meaning |
+|---|---|
+| `valid` | The last query passed every check. |
+| `unanswerable` | The LLM declined: the question is not about this graph, or asks to change data. There is no query. |
+| `failed` | The corrections ran out. The last attempt has the last query and what was still wrong. |
+
+Each {py:class}`~text2cypher.Issue` in `attempt.validation.issues` says which validator found it (`source`: `syntax`, `schema` or `properties`), has a `code` and a `description`, and keeps cypher-guardrail's own structured issue in `raw`, so nothing has to be read out of text. See [](checks.md).
+
+`result.usage` adds up the tokens of all attempts, and is `None` if any call did not report them.
+
+## Configuration
+
+```python
+from text2cypher import Config
+
+agent = Text2Cypher(client, llm, config=Config(attempts_w_filtered=2, total_attempts=4))
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `attempts_w_filtered` | `3` | Corrections made with the filtered schema. |
+| `total_attempts` | `5` | Corrections in all, filtered and full. The first query is not a correction, so the LLM is asked at most `total_attempts + 1` times (plus one retry on the full schema if it declines on the filtered one). |
+| `execute` | `False` | Run the final query, see below. |
+| `execute_timeout_ms` | `10000` | Stop an execution after this many milliseconds; `None` for no limit. |
+| `schema_refresh_seconds` | `None` | Keep a graph's schema and check it for changes at most this often; `None` reads it on every run. See [](schema.md). |
+
+`Config` rejects negative values and `total_attempts < attempts_w_filtered`.
+
+## Running the query
+
+With `Config(execute=True)` a `valid` query is also run, read-only (FalkorDB itself rejects a write), and the rows are on the result:
+
+```python
+agent = Text2Cypher(client, llm, config=Config(execute=True))
+result = await agent.run("Which actors appeared in The Matrix?", graph="movies")
+
+print(result.records.columns)  # ('p.name',)
+print(result.records.rows)  # (('Keanu Reeves',), ('Carrie-Anne Moss',))
+print(result.execution_error)  # None
+```
+
+If FalkorDB rejects or fails the query, it runs past the timeout, or it cannot be reached, the message is in `result.execution_error` and the status stays `valid`: the query did pass the checks, and the LLM calls you paid for are not lost. Run `result.query` yourself or try again. Queries that are `unanswerable` or `failed` are never run. Values in the rows are the client's own objects (a node stays a `falkordb` `Node`).
+
+## Errors
+
+* {py:class}`~text2cypher.GraphNotFoundError` (a `ValueError`): the graph does not exist, or has no labelled nodes or relationships. Raised by `run` before any LLM call, so a typo in the graph name costs nothing.
+* Errors from your LLM client, and from the database while reading the schema or validating, are not caught: they reach you as they are.
+* Errors while executing the final query are recorded in `result.execution_error`, as above.
+
+## Try it without a server or a model
+
+This example starts an embedded FalkorDB ([FalkorDBLite](https://pypi.org/project/falkordblite/)) with a small film graph and answers with a scripted LLM, so the whole flow, including a correction, runs in a few seconds. It is in the repository as `examples/quickstart.py`.
+
+```{literalinclude} ../examples/quickstart.py
+:language: python
+:start-at: import asyncio
+```
+
+It prints:
+
+```text
+status: valid
+attempt 1: MATCH (m:Movie {title: 'The Matrix'})-[:ACTED_IN]->(p:Person) RETURN p.name
+  problem: The specified path (:Movie)-[:ACTED_IN]->(:Person) has the opposite direction in the knowledge graph schema. The path (m:Movie {title: 'The Matrix'})-[:ACTED_IN]->(p:Person) in the Cypher statement should be changed to  (m:Movie {title: 'The Matrix'})<-[:ACTED_IN]-(p:Person).
+attempt 2: MATCH (p:Person)-[:ACTED_IN]->(m:Movie {title: 'The Matrix'}) RETURN p.name
+columns: ('p.name',)
+rows: (('Keanu Reeves',), ('Carrie-Anne Moss',))
+```

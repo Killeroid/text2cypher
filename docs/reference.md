@@ -1,0 +1,58 @@
+# API reference
+
+The public API is what `text2cypher`, `text2cypher.llm` and `text2cypher.schema` export. Modules whose name starts with an underscore are internal and may change without notice.
+
+## Asking a question
+
+```{eval-rst}
+.. autoclass:: text2cypher.Text2Cypher
+   :members:
+.. autoclass:: text2cypher.Config
+.. autoexception:: text2cypher.GraphNotFoundError
+```
+
+## The result
+
+```{eval-rst}
+.. autoclass:: text2cypher.Result
+   :members:
+.. autoclass:: text2cypher.Attempt
+.. autoclass:: text2cypher.Records
+.. autoclass:: text2cypher.Issue
+   :members:
+.. autoclass:: text2cypher.ValidationResult
+   :members:
+.. autodata:: text2cypher._validation.issues.Source
+   :no-value:
+.. autodata:: text2cypher._results.Status
+   :no-value:
+.. autodata:: text2cypher._results.SchemaScope
+   :no-value:
+```
+
+## LLM clients
+
+```{eval-rst}
+.. autoclass:: text2cypher.AsyncLLMClient
+   :members:
+.. autoclass:: text2cypher.Completion
+.. autoclass:: text2cypher.Usage
+.. autoclass:: text2cypher.OpenAIClient
+   :members:
+.. autoclass:: text2cypher.FakeLLM
+   :members:
+.. autoclass:: text2cypher.llm.Call
+```
+
+## The schema
+
+```{eval-rst}
+.. autoclass:: text2cypher.GraphSchema
+.. autoclass:: text2cypher.schema.Path
+.. autoclass:: text2cypher.schema.Index
+.. autodata:: text2cypher.schema._filter.SchemaFilter
+   :no-value:
+.. autofunction:: text2cypher.filter_schema
+.. autofunction:: text2cypher.schema.render_schema
+.. autofunction:: text2cypher.schema.schema_from_snapshot
+```
