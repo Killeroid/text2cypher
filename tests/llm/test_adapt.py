@@ -17,9 +17,9 @@ async def test_an_async_openai_with_a_model_is_asked_that_model():
     sdk, requests = openai_client(REPLY)
 
     client = as_client(sdk, "a-model")
+    assert isinstance(client, OpenAIClient)
     await client.complete("system", "question")
 
-    assert isinstance(client, OpenAIClient)
     assert requests[0]["model"] == "a-model"
     assert requests[0]["messages"][-1] == {"role": "user", "content": "question"}
 
@@ -28,7 +28,9 @@ async def test_a_client_made_for_a_compatible_server_works_the_same_way():
     # the helper's client points at http://test/v1, not at OpenAI
     sdk, requests = openai_client(REPLY)
 
-    await as_client(sdk, "local-model").complete("s", "u")
+    client = as_client(sdk, "local-model")
+    assert isinstance(client, OpenAIClient)
+    await client.complete("s", "u")
 
     assert requests[0]["model"] == "local-model"
 
@@ -47,7 +49,9 @@ async def test_an_azure_client_is_an_async_openai_and_the_model_is_the_deploymen
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(answer)),
     )
 
-    await as_client(sdk, "my-deployment").complete("s", "u")
+    client = as_client(sdk, "my-deployment")
+    assert isinstance(client, OpenAIClient)
+    await client.complete("s", "u")
 
     assert requests[0]["model"] == "my-deployment"
 
@@ -61,7 +65,7 @@ def test_an_async_openai_has_no_model_of_its_own():
 
 def test_the_synchronous_client_is_refused_because_the_library_is_async():
     with pytest.raises(TypeError, match="async"):
-        as_client(openai.OpenAI(api_key="test"))
+        as_client(openai.OpenAI(api_key="test"))  # ty: ignore[invalid-argument-type]
 
 
 @pytest.mark.parametrize("kind", ["fake", "openai"])
