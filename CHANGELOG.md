@@ -2,7 +2,9 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 2.1.0 - 2026-10-21
+
+Skills of your own, and what a query returns as plain Python objects. Nothing breaks: both are new and opt-in, and the public API of 2.0.0 is unchanged.
 
 ### Added
 
