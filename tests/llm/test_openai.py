@@ -17,7 +17,9 @@ async def test_openai_client_sends_system_and_user_and_returns_text_and_usage():
 
     completion = await llm.complete("be brief", "which movies?")
 
-    assert completion == Completion("```cypher\nRETURN 1\n```", Usage(11, 5))
+    assert completion == Completion(
+        "```cypher\nRETURN 1\n```", Usage(11, 5), (), "stop"
+    )
     assert requests == [
         {
             "model": "test-model",
@@ -43,7 +45,7 @@ async def test_openai_client_without_usage_or_content_gives_no_usage_and_empty_t
     client, _ = openai_client(chat_reply(None, None))
     llm = OpenAIClient("test-model", client=client)
 
-    assert await llm.complete("s", "u") == Completion("", None)
+    assert await llm.complete("s", "u") == Completion("", None, (), "stop")
 
 
 async def test_openai_client_can_send_one_user_message_for_a_model_without_a_system_role():

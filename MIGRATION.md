@@ -46,7 +46,7 @@ Completion(text, usage)  # still fine
 Message("user", text)  # still fine
 ```
 
-Code that unpacks them into a fixed number of names does not (`text, usage = completion`, or `system, user = call`). Read the fields by name instead: `completion.text`, `completion.usage`, `call.system`, `call.user`.
+A `Completion` also has `finish_reason`, which a custom client can set (`"stop"`, `"length"`, `"content_filter"`, `"refusal"`) and leave `None` if it does not know. Code that unpacks them into a fixed number of names does not (`text, usage = completion`, or `system, user = call`). Read the fields by name instead: `completion.text`, `completion.usage`, `call.system`, `call.user`.
 
 ## OpenAI
 

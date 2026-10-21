@@ -1185,3 +1185,109 @@ async def test_one_empty_reply_is_forgiven_each_time_and_not_once_for_the_whole_
 
     assert result.status == "valid"
     assert [a.empty_reply for a in result.attempts] == [True, False, True, False]
+
+
+async def test_a_refusal_is_a_decline_and_goes_on_to_the_full_schema_like_one():
+    refused = Completion("", None, (), "refusal")
+    llm = FakeLLM([refused, Completion(reply("a"), None, (), "stop")])
+
+    result = await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(VALID),
+        config=Config(),
+        schema_filter=lambda schema, question: FILTERED,
+    )
+
+    assert result.status == "valid"
+    assert [
+        (a.query, a.schema_scope, a.empty_reply, a.finish_reason)
+        for a in result.attempts
+    ] == [
+        ("", "filtered", False, "refusal"),
+        ("a", "full", False, "stop"),
+    ]
+
+
+async def test_a_refusal_on_the_full_schema_is_unanswerable_and_not_failed():
+    llm = FakeLLM([Completion("", None, (), "refusal")])
+
+    result = await run_workflow(
+        "Q", FULL, llm=llm, validate=ScriptedValidator(), config=Config()
+    )
+
+    assert result.status == "unanswerable"
+    assert result.attempts[0].finish_reason == "refusal"
+
+
+@pytest.mark.parametrize("reason", ["length", "content_filter"])
+async def test_an_empty_reply_that_hit_a_limit_or_a_filter_is_not_asked_again(
+    reason: str,
+):
+    llm = FakeLLM([Completion("", Usage(9, 0), (), reason), reply("never asked")])
+
+    result = await run_workflow(
+        "Q", FULL, llm=llm, validate=ScriptedValidator(), config=Config()
+    )
+
+    # the same request would hit the same limit or filter: the run ends, and says why
+    assert result.status == "failed"
+    assert len(llm.calls) == 1
+    assert [(a.empty_reply, a.finish_reason) for a in result.attempts] == [
+        (True, reason)
+    ]
+    assert result.usage == Usage(9, 0)
+
+
+@pytest.mark.parametrize("reason", [None, "stop", "something_new"])
+async def test_an_empty_reply_for_any_other_reason_is_asked_again_once(
+    reason: str | None,
+):
+    llm = FakeLLM(
+        [Completion("", None, (), reason), Completion(reply("a"), None, (), "stop")]
+    )
+
+    result = await run_workflow(
+        "Q", FULL, llm=llm, validate=ScriptedValidator(VALID), config=Config()
+    )
+
+    assert result.status == "valid"
+    assert [a.finish_reason for a in result.attempts] == [reason, "stop"]
+
+
+async def test_the_reason_a_reply_ended_is_on_every_attempt_that_asked_the_llm():
+    llm = FakeLLM(
+        [
+            Completion(reply("MATCH (x:X) RETURN x"), None, (), "length"),
+            Completion(reply("MATCH (p:Person) RETURN p"), None, (), "stop"),
+        ]
+    )
+
+    result = await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(invalid("x"), VALID),
+        config=Config(),
+    )
+
+    # a query that may be cut off is still validated and corrected, and the reason shows
+    assert [a.finish_reason for a in result.attempts] == ["length", "stop"]
+
+
+async def test_a_query_that_was_fixed_without_the_llm_has_no_reason():
+    llm = FakeLLM([Completion(reply(TYPO), None, (), "stop")])
+
+    result = await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(misspelled(label="Persn"), VALID),
+        config=Config(autofix_typos=True),
+    )
+
+    assert [(a.auto_fixed, a.finish_reason) for a in result.attempts] == [
+        (False, "stop"),
+        (True, None),
+    ]

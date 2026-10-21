@@ -73,7 +73,13 @@ An empty fenced block means the LLM sees no way to answer the question with the 
 
 ## When the LLM sends nothing
 
-A reply with no text at all, or only white space, is not a decline: the model did not say that it cannot answer, the call just returned nothing (a provider that cut it off or filtered it, for example). So the same request is made again, once, exactly as it was, and it does not use up a correction. If the second reply is empty too, the run ends as `failed`, not `unanswerable`, with no query: the question was not shown to be unanswerable. Each empty reply is an attempt with `attempt.empty_reply` set, and its tokens count. The count starts again after any reply that has text, so a long run is not given up on because of one empty reply early on.
+A reply with no text at all, or only white space, is not a decline: the model did not say that it cannot answer, the call just returned nothing. What happens depends on why it ended, when the client says (`attempt.finish_reason`; `OpenAIClient` does):
+
+* **`refusal`**: the model refused to answer. That is a decline, so it follows the rules above: asked again on the full schema if the first try used a filtered one, otherwise `unanswerable`.
+* **`length` or `content_filter`**: the reply hit a token limit, or the provider blocked it. The same request would hit the same limit or filter, so it is not asked again: the run ends as `failed` with no query, and the attempt says why. For `length`, raise the model's limit (a model that thinks first can use it all before it writes anything).
+* **Anything else, or not known**: the call returned nothing, so the same request is made again, once, exactly as it was, and it does not use up a correction. If the second reply is empty too, the run ends as `failed`, not `unanswerable`, with no query: the question was not shown to be unanswerable.
+
+Each empty reply is an attempt with `attempt.empty_reply` set, and its tokens count. The count starts again after any reply that has text, so a long run is not given up on because of one empty reply early on. A reply that has a query but ended at `length` may be cut off: it is validated and corrected like any other, and `attempt.finish_reason` shows what happened.
 
 ## What the LLM sees
 

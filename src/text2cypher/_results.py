@@ -34,8 +34,13 @@ class Attempt:
         skills: The ids of the skills the LLM read while it wrote this query (``Config.use_skills``).
             The tokens of reading them are in ``usage``.
         empty_reply: The LLM sent no text at all. That is not a decline (an explicit empty
-            block): the same request is made once more, and a second empty reply ends the
-            run as ``failed``.
+            block): unless the client says why (``finish_reason``), the same request is made
+            once more, and a second empty reply ends the run as ``failed``.
+        finish_reason: Why the LLM's reply ended, when the client says (see
+            ``Completion.finish_reason``). ``"length"`` on a reply that has a query means the
+            query may be cut off; ``"length"`` or ``"content_filter"`` on an empty reply ends
+            the run as ``failed`` without a second try, and ``"refusal"`` is a decline.
+            ``None`` for a query that was fixed without the LLM.
     """
 
     query: str
@@ -46,6 +51,7 @@ class Attempt:
     auto_fixed: bool = False
     skills: tuple[str, ...] = ()
     empty_reply: bool = False
+    finish_reason: str | None = None
 
 
 # What something that asked no model used: a zero, where ``None`` is "not known"

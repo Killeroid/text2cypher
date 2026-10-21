@@ -138,7 +138,7 @@ its execution error and the skills it read), the number of corrections, whether 
   later corrections then use the full schema. Only a decline on the full schema is `unanswerable`. The empty
   attempt stays in `Result.attempts` with its usage.
 - A reply with **no text at all** (empty or only white space) is not a decline: `_no_query` records an attempt with `empty_reply`, and the loop asks the same request again once, exactly as it was (the
-  rounds, the schema and the scope do not change, and no correction is spent). A second one in a row ends the run as `failed` with no query. Any reply that has text resets the count. ADR-047.
+  rounds, the schema and the scope do not change, and no correction is spent). A second one in a row ends the run as `failed` with no query. Any reply that has text resets the count. ADR-047. The reason the reply ended decides first, when the client says (ADR-048): a `refusal` has no empty flag and is a decline; `length` and `content_filter` (`_NOT_RETRIED`) end the run at the first empty reply, since the same request would hit the same limit or filter.
 - An empty query is never validated: the validator would call it a syntax error and the loop would spend its whole
   budget on it.
 - `Config` rejects negative values and `total_attempts < attempts_w_filtered`.
@@ -146,7 +146,7 @@ its execution error and the skills it read), the number of corrections, whether 
 ### Results (`_results.py`)
 
 `Result` has `status`, the last `query`, every `Attempt`, `usage`, `records`, `execution_error` and `filter_usage`. An `Attempt` has the query (empty for a decline or an empty reply), its `ValidationResult` (`None` for no query, and
-for a query the database failed to validate), the schema scope, `Usage`, `execution_error`, and the flags `auto_fixed`, `empty_reply` and `skills` (the ids read). `Result.usage` is the sum of the attempts' usage and
+for a query the database failed to validate), the schema scope, `Usage`, `execution_error`, and the flags `auto_fixed`, `empty_reply` and `skills` (the ids read) and `finish_reason` (why the reply ended). `Result.usage` is the sum of the attempts' usage and
 `filter_usage` (`NO_TOKENS`, a zero, for a filter that asks no model), or `None` if any of them did not report it (`total_usage`, which the run errors use too). `Issue`, `ValidationResult` and `Attempt` are hashable (the dict inside
 an `Issue` is left out of its hash); a `Result` is hashable unless it holds `records`.
 
@@ -282,7 +282,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 - **Extraction**: the first fenced block anywhere in the reply, else the whole reply trimmed (models add prose around
   fences, and validation catches what is left). A language tag (any word on the fence's own line, or `cypher`,
   `opencypher`, `cql` on a one-line block) is dropped; Windows line endings are accepted. An empty block means the
-  LLM declined. A reply with no text at all is not a decline: `Generation.empty` is set, and the loop asks again once (see Workflow, ADR-047). A reply with no fence at all is taken as the query: a prose refusal then fails validation and the
+  LLM declined. A reply with no text at all is not a decline: `Generation.empty` is set, and the loop asks again once unless the reason it ended says not to (see Workflow, ADR-047, ADR-048). `Completion.finish_reason` is carried to `Generation` and to `Attempt`. A reply with no fence at all is taken as the query: a prose refusal then fails validation and the
   loop recovers, and a heuristic that declined it could decline a valid query.
 - **Prompts** are our own wording. The generator system prompt has the task, a short FalkorDB rules block, two
   examples on another schema and the rendered schema; the user message is only the question, so the question is
@@ -486,7 +486,7 @@ Each item says what would bring it back. What was here and is built now: the LLM
   questions about paths, algorithms and functions, with a weaker model or harder cases; the harness is there for it.
 
 **Ideas**
-- Reading the API's finish reason, to say why a reply was empty or cut off (ADR-047): it needs `Completion` to carry it.
+- Telling the model, in a correction, that its last query was cut off (`finish_reason` is `length` on an attempt that has a query); today the query is validated and corrected like any other.
 - Reversing a wrong-direction path without the LLM: the validator gives the exact replacement. Wait for a sign that models get directions wrong often.
 - Feeding an empty result back to the LLM, opt-in: an empty result can be the right answer; a confidence like another project's would be a different design, and needs an answer-writing step.
 - A cap on the number of sampled properties of a very wide schema, and sampling only indexed or low-cardinality ones (ADR-034).

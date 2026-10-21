@@ -22,13 +22,16 @@ class Generation:
     """A query an LLM wrote, empty if it declined, and the tokens that cost.
 
     ``empty`` is a reply with no text at all, which is not the same as a decline (an empty
-    fenced block): it is a call that returned nothing.
+    fenced block): it is a call that returned nothing. A refusal is not empty: it is the
+    model declining, in the one way it could. ``finish_reason`` is why the reply ended, when
+    the client says.
     """
 
     query: str
     usage: Usage | None
     skills: tuple[str, ...] = ()
     empty: bool = False
+    finish_reason: str | None = None
 
 
 async def generate_cypher(
@@ -69,6 +72,7 @@ async def generate_cypher(
             usage,
             read_now,
             empty=_no_text(completion),
+            finish_reason=completion.finish_reason,
         )
     completion = await ask(
         llm,
@@ -77,12 +81,16 @@ async def generate_cypher(
         folded_message(question, rounds, schema, parameterize=parameterize),
     )
     return Generation(
-        extract_cypher(completion.text), completion.usage, empty=_no_text(completion)
+        extract_cypher(completion.text),
+        completion.usage,
+        empty=_no_text(completion),
+        finish_reason=completion.finish_reason,
     )
 
 
 def _no_text(completion: Completion) -> bool:
-    return not completion.text.strip()
+    """A reply with nothing in it, that is not a refusal (which is a decline)."""
+    return not completion.text.strip() and completion.finish_reason != "refusal"
 
 
 async def ask(

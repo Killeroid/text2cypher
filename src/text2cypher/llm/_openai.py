@@ -105,6 +105,7 @@ class OpenAIClient:
             if used is None
             else Usage(used.prompt_tokens, used.completion_tokens),
             tool_calls=_tool_calls(message),
+            finish_reason=_finish_reason(response.choices[0].finish_reason, message),
         )
 
     def _messages(
@@ -161,6 +162,13 @@ def _tool_calls(message: ChatCompletionMessage) -> tuple[ToolCall, ...]:
         for call in message.tool_calls or ()
         if call.type == "function"
     )
+
+
+def _finish_reason(reason: str | None, message: ChatCompletionMessage) -> str | None:
+    """The API's finish reason, with a refusal (a message with no text and a ``refusal``) named as one."""
+    if message.refusal and not message.content:
+        return "refusal"
+    return reason
 
 
 def _arguments(text: str) -> dict[str, Any]:

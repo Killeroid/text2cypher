@@ -68,11 +68,17 @@ class Completion(NamedTuple):
         usage: The tokens the call used, or ``None`` if they are not known.
         tool_calls: The tools the model asked to have called, if it was offered any. The
             text is then usually empty.
+        finish_reason: Why the reply ended, if the client knows: ``"stop"`` (it finished),
+            ``"length"`` (it hit a token limit), ``"content_filter"`` (the provider blocked
+            it), ``"refusal"`` (the model refused to answer), ``"tool_calls"``, or the
+            provider's own word. ``None`` is not known. It tells an empty reply that is a
+            refusal from one that is a limit or a filter.
     """
 
     text: str
     usage: Usage | None
     tool_calls: tuple[ToolCall, ...] = ()
+    finish_reason: str | None = None
 
 
 class Message(NamedTuple):

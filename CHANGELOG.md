@@ -8,9 +8,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 - A reply from the LLM with no text at all (or only white space) is no longer taken as a decline. It is a call that returned nothing, so the same request is made once more, exactly as it was, and it costs no correction; a second empty reply in
   a row ends the run as `failed`, with no query, and not as `unanswerable`. `Attempt.empty_reply` marks each such attempt. An explicit empty fenced block is still a decline, as before. Before, a provider that returned nothing gave `unanswerable`.
+  Why the reply ended decides it when the client says: a `refusal` is a decline, `length` and `content_filter` are not asked again (the same request would hit the same limit or filter), and anything else, or not known, is asked again once.
 
 ### Added
 
+- `Completion.finish_reason` (`"stop"`, `"length"`, `"content_filter"`, `"refusal"`, or the provider's word; `None` if not known), which `OpenAIClient` fills from the API (a message with a `refusal` and no text is a `"refusal"`), and `Attempt.finish_reason`, on every attempt that asked the LLM.
 - `Config(use_skills=True)` (off by default): the LLM is offered skills, short guides to parts of FalkorDB's Cypher that a model gets wrong without them: `graph-algorithms` (PageRank, betweenness, components, communities, BFS), `path-finding`
   (`algo.SPpaths` and `algo.SSpaths` with their options, variable-length patterns, where `shortestPath` works) and `functions` (the functions FalkorDB has, and what it lacks or spells differently, such as `!=`, `=~`, `datetime()` and `COUNT {}`).
   The prompt lists them with a line each, and a tool, `read_skill`, reads one when a question needs it (up to three rounds, then the model must answer). **Each read is another call to the model.** What was read is in the prompt of the next request, so a

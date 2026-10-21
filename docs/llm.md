@@ -39,7 +39,7 @@ class MyClient:
         return Completion(text, Usage(input_tokens=tokens_in, output_tokens=tokens_out))
 ```
 
-text2cypher keeps no state between questions, and the models are stateless: every call carries everything the model needs, the system message and the turns. Use `Completion(text, None)` when the provider does not report tokens; `result.usage` is then `None`. If your client has both methods, `chat` is used; an attribute named `chat` that is not callable does not count.
+text2cypher keeps no state between questions, and the models are stateless: every call carries everything the model needs, the system message and the turns. Use `Completion(text, None)` when the provider does not report tokens; `result.usage` is then `None`. If you know why a reply ended, say so with `Completion(text, usage, finish_reason=...)`: `"stop"`, `"length"` (a token limit), `"content_filter"` (the provider blocked it) or `"refusal"` (the model refused). It matters only for a reply with no text, where it decides whether to ask again (see [How it works](how-it-works.md#when-the-llm-sends-nothing)); leave it out and an empty reply is asked again once. If your client has both methods, `chat` is used; an attribute named `chat` that is not callable does not count.
 
 The reply should hold the query in one fenced block (` ```cypher ... ``` `). An empty block means the question cannot be answered. Text around the block is ignored, a language tag on the fence is dropped, and a reply with no fence at all is taken as the query itself.
 

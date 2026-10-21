@@ -13,6 +13,8 @@ print(result.status)  # "valid", "unanswerable" or "failed"
 for number, attempt in enumerate(result.attempts, start=1):
     shown = attempt.query or ("(no reply)" if attempt.empty_reply else "(declined)")
     print(f"{number}. [{attempt.schema_scope}] {shown}")
+    if attempt.finish_reason not in (None, "stop"):
+        print(f"   the reply ended: {attempt.finish_reason}")
     if attempt.skills:
         print(f"   read: {', '.join(attempt.skills)}")
     if attempt.auto_fixed:
@@ -32,8 +34,8 @@ To see what the LLM was shown, print the schema (see [The schema](schema.md#the-
 
 | What you see | What it means | What to try |
 |---|---|---|
-| Status `unanswerable` | The LLM declined, also with the full schema: it sees no way to answer from the graph, or the question asks to change data or is not a request for a query. | Check that the graph has the labels, relationships and properties the question needs (the schema above). Ask for something the graph holds. |
-| Status `failed` with no query | The LLM sent no text twice in a row. That is not a decline: the attempts have `empty_reply` set, and the snippet above shows them as "(no reply)". | Try again. If it keeps happening, look at the model or the provider (a filter or a length limit can cut a reply to nothing), and see `usage` for what the calls cost. |
+| Status `unanswerable` | The LLM declined (an empty block, or a `refusal` from the model), also with the full schema: it sees no way to answer from the graph, or the question asks to change data or is not a request for a query. | Check that the graph has the labels, relationships and properties the question needs (the schema above). Ask for something the graph holds. |
+| Status `failed` with no query | The LLM sent no text. That is not a decline: the attempts have `empty_reply` set, and the snippet above shows them as "(no reply)". `attempt.finish_reason` says why when the client knows. `length`: the reply hit a token limit, so raise it (a model that thinks first can use it all before it writes anything). `content_filter`: the provider blocked it. Neither is asked again. Anything else was asked again once, and came back empty twice. | Read `finish_reason`. If it is `length`, raise the limit. If it is `content_filter`, change the question or the provider's settings. Otherwise try again, and look at the model or the provider. |
 | Status `failed` | The corrections ran out. The last attempt has the last query and its problems. | Read the problems of each attempt: a name that is not in the graph points to a question the schema cannot answer, or a filter that kept too little (`schema_filter=None` shows the model the whole schema, and an [`LLMSchemaFilter`](schema.md#asking-an-llm-to-filter) lets a model choose). Raise `attempts_w_filtered` and `total_attempts`, try a stronger model, or turn on `autofix_typos` for misspelled names. |
 | Status `valid`, rows empty | The query is correct and nothing matches. An empty result is not an error, and it is not corrected. | A value spelled differently than in the graph is the usual cause: `example_values` shows the model how values are written (it is on by default; see [Example values](schema.md#example-values)). Check the value in the question exists in the data. |
 | Status `valid`, rows that look wrong | The checks say the query is valid against the graph, not that it answers the question. | Read `result.query`. This is the limit of validation (see [What is and is not checked](checks.md)); the evaluation harness in `evals/` is for measuring it on your own questions. |

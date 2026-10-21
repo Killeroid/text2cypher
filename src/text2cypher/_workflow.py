@@ -36,6 +36,8 @@ from text2cypher.schema import GraphSchema, SchemaFilter
 _FIX_ROUNDS = 3
 # A reply with no text at all is a call that returned nothing: it is made again once
 _EMPTY_RETRIES = 1
+# Why an empty reply is not asked for again: the same request would hit the same limit or filter
+_NOT_RETRIED = {"length", "content_filter"}
 
 
 async def run_workflow(
@@ -123,6 +125,7 @@ async def run_workflow(
                 scope,
                 generation.usage,
                 skills=generation.skills,
+                finish_reason=generation.finish_reason,
             )
             raise DatabaseError.after(
                 question, [*attempts, unchecked], error, filter_usage
@@ -170,10 +173,15 @@ def _no_query(
             generation.usage,
             skills=generation.skills,
             empty_reply=generation.empty,
+            finish_reason=generation.finish_reason,
         )
     )
     status: Status = "failed" if generation.empty else "unanswerable"
-    ended = empties > _EMPTY_RETRIES if generation.empty else scope == "full"
+    ended = (
+        empties > _EMPTY_RETRIES or generation.finish_reason in _NOT_RETRIED
+        if generation.empty
+        else scope == "full"
+    )
     if not ended:
         return None
     return Result(question, status, tuple(attempts), filter_usage=filter_usage)
@@ -218,7 +226,12 @@ async def _check(
     """
     validation = await validate(generation.query)
     attempt = Attempt(
-        generation.query, validation, scope, generation.usage, skills=generation.skills
+        generation.query,
+        validation,
+        scope,
+        generation.usage,
+        skills=generation.skills,
+        finish_reason=generation.finish_reason,
     )
     if validation.valid or not (header or typos):
         return [attempt], validation

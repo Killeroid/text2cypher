@@ -159,3 +159,14 @@ def tool_calls_reply(
         for id_, name, arguments in calls
     ]
     return reply
+
+
+def chat_reply_ending(
+    content: str | None, finish_reason: str, *, refusal: str | None = None
+) -> dict:
+    """A chat reply that ended for ``finish_reason``, perhaps with a refusal and no content."""
+    reply = chat_reply(content, None)
+    reply["choices"][0]["finish_reason"] = finish_reason
+    if refusal is not None:
+        reply["choices"][0]["message"]["refusal"] = refusal
+    return reply

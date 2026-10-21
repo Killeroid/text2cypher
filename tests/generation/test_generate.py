@@ -117,3 +117,38 @@ async def test_a_reply_with_no_text_is_told_from_a_decline_and_from_a_reply_with
     generation = await generate_cypher(FakeLLM([text]), SCHEMA, "q")
 
     assert (generation.empty, generation.query) == (empty, query)
+
+
+@pytest.mark.parametrize(
+    ("reason", "empty"),
+    [
+        (None, True),
+        ("stop", True),
+        ("length", True),
+        ("content_filter", True),
+        # the model declining, in the one way it could: not an empty reply
+        ("refusal", False),
+    ],
+)
+async def test_an_empty_reply_is_told_from_a_refusal_by_why_it_ended(
+    reason: str | None, empty: bool
+):
+    generation = await generate_cypher(
+        FakeLLM([Completion("", None, (), reason)]), SCHEMA, "q"
+    )
+
+    assert generation.empty is empty
+    assert generation.finish_reason == reason
+    assert generation.query == ""
+
+
+async def test_a_reply_that_has_a_query_keeps_the_reason_it_ended():
+    generation = await generate_cypher(
+        FakeLLM([Completion("```cypher\nRETURN 1\n```", None, (), "length")]),
+        SCHEMA,
+        "q",
+    )
+
+    assert generation.query == "RETURN 1"
+    assert generation.finish_reason == "length"
+    assert not generation.empty

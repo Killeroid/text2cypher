@@ -2,7 +2,7 @@ import json
 from typing import Any
 
 import pytest
-from support import chat_reply, openai_client, tool_calls_reply
+from support import chat_reply, chat_reply_ending, openai_client, tool_calls_reply
 
 from text2cypher import (
     Completion,
@@ -93,6 +93,7 @@ async def test_the_model_asking_for_tools_comes_back_as_tool_calls_with_parsed_a
             ToolCall("call_1", "read_skill", {"id": "path-finding"}),
             ToolCall("call_2", "read_skill", {"id": "functions"}),
         ),
+        "tool_calls",
     )
 
 
@@ -182,7 +183,7 @@ async def test_a_reply_with_text_and_no_tool_calls_is_as_before():
         "s", [Message("user", "q")], [READ_SKILL]
     )
 
-    assert completion == Completion("```cypher\nRETURN 1\n```", None, ())
+    assert completion == Completion("```cypher\nRETURN 1\n```", None, (), "stop")
 
 
 def test_a_message_and_a_completion_without_tools_are_what_they_were():
@@ -258,3 +259,39 @@ async def test_the_fake_records_the_tools_and_the_choice_and_can_script_a_tool_c
     assert second.tool_calls == ()
     assert [c.tools for c in llm.calls] == [(READ_SKILL,), (READ_SKILL,)]
     assert [c.tool_choice for c in llm.calls] == ["auto", "none"]
+
+
+@pytest.mark.parametrize("reason", ["stop", "length", "content_filter"])
+async def test_the_reason_a_reply_ended_comes_back_with_it(reason: str):
+    sdk, _ = openai_client(chat_reply_ending("some text", reason))
+
+    completion = await OpenAIClient("m", client=sdk).chat("s", [Message("user", "q")])
+
+    assert completion.finish_reason == reason
+    assert completion.text == "some text"
+
+
+async def test_a_refusal_with_no_text_is_named_as_one():
+    sdk, _ = openai_client(
+        chat_reply_ending(None, "stop", refusal="I cannot help with that.")
+    )
+
+    completion = await OpenAIClient("m", client=sdk).chat("s", [Message("user", "q")])
+
+    assert completion.finish_reason == "refusal"
+    assert completion.text == ""
+
+
+async def test_a_refusal_next_to_text_leaves_the_reason_as_the_api_gave_it():
+    sdk, _ = openai_client(
+        chat_reply_ending("```cypher\nRETURN 1\n```", "stop", refusal="partly")
+    )
+
+    completion = await OpenAIClient("m", client=sdk).chat("s", [Message("user", "q")])
+
+    assert completion.finish_reason == "stop"
+
+
+def test_a_completion_does_not_say_why_unless_it_is_told():
+    assert Completion("a", None).finish_reason is None
+    assert Completion("a", None, (), "length").finish_reason == "length"
