@@ -2,6 +2,12 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Changed
+
+- `cypher-guardrail` is now `>=1.5.1` (was `>=1.4.0`).
+
 ## 2.0.0 - 2026-10-21
 
 The LLM client protocol takes tools, which is the one breaking change (see `MIGRATION.md`). It brings skills the LLM can read, an LLM-based schema filter, the OpenAI SDK client passed as it is, and the reason a reply ended; the filter and skills were measured with Haiku and Sonnet and both stay off by default.

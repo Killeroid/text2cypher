@@ -8,7 +8,7 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "cypher-guardrail>=1.4.0",
+    "cypher-guardrail>=1.5.1",
     "falkordb>=1.8.0",
     "openai>=3.31.0",
     "redis>=8.1.0",

@@ -438,7 +438,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 - uv for everything (`uv add`, `uv run`); ruff for lint and format (rules B, I, UP, SIM, C4, C90 with a
   complexity limit of 10, PTH, RET, RUF, ASYNC, PT, TID, TC, FURB); ty for types; import-linter for the layers above; pytest (importlib import mode, strict markers); coverage with branches. See
   `CLAUDE.md`.
-- Dependencies: `cypher-guardrail>=1.4.0`, `falkordb`, `openai`, `redis` (for `RedisError`), `snowballstemmer`.
+- Dependencies: `cypher-guardrail>=1.5.1`, `falkordb`, `openai`, `redis` (for `RedisError`), `snowballstemmer`.
   Dev: `falkordblite`, `anyio`, `pytest`, `ruff`, `ty`, `coverage`, `import-linter`, `httpx2` (the OpenAI client tests run the real
   SDK over a mock transport). Docs group: `sphinx`, `myst-parser`, `furo`, `sphinx-copybutton`.
 - Documentation: Sphinx with MyST Markdown, Furo and autodoc (Google docstrings through napoleon), built by Read
