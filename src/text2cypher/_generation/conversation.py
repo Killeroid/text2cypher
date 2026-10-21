@@ -31,13 +31,15 @@ class Round:
     that had passed validation.
 
     ``schema_note`` marks the round whose turn tells the LLM that the schema is now the
-    whole graph, after queries written with a part of it.
+    whole graph, after queries written with a part of it. ``skills_read`` are the ids of the
+    skills the LLM read to write the query; the next request already has them in its prompt.
     """
 
     query: str
     issues: tuple[Issue, ...]
     execution_error: str | None = None
     schema_note: bool = False
+    skills_read: tuple[str, ...] = ()
 
 
 def chat_messages(

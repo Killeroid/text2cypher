@@ -20,18 +20,21 @@ question ──► filter schema ──► generate ──► validate ─┬─
 
 The loop is driven by explicit counters, not by inspecting a history list:
 
-1. Generate with the **filtered** schema (`schema_scope = "filtered"`).
-2. Validate. If the query has no issues, finish (executing it if `Config.execute`).
-3. Otherwise correct and validate again, until `attempts_w_filtered` corrections have been spent; then the
-   corrections use the **full** schema.
-4. Continue until `total_attempts` corrections, then return a `failed` Result that still carries the last query
-   and its issues.
+0. **Filter.** `schema_filter` keeps what the question needs of the schema: the lexical `filter_schema` by default, an `LLMSchemaFilter` that asks a model instead, or a function of your own, sync or async (see Schema). A
+   filter that keeps the whole schema counts as no filter, and every attempt is `full`. What a filter cost is `Result.filter_usage`.
+1. **Generate** with the **filtered** schema (`schema_scope = "filtered"`). With `Config.use_skills` the model may first read skills (up to three rounds of tool calls, see Reading skills); that is part of the same request.
+   - An explicit empty fenced block is the LLM **declining**. On the filtered schema the same request is made again with the full one, once, at no cost in corrections; on the full schema the result is `unanswerable`.
+   - A reply with **no text at all** is a call that returned nothing, not a decline: the same request is made again once, exactly as it was; two in a row end the run as `failed` with no query (ADR-047).
+2. **Validate.** If the query has no issues, finish (executing it if `Config.execute`).
+3. Otherwise **correct** and validate again, until `attempts_w_filtered` corrections have been spent; then the corrections use the **full** schema. A correction is the next turn of a conversation that carries every earlier
+   attempt (see Generation).
+4. Continue until `total_attempts` corrections, then return a `failed` Result that still carries the last query and its issues.
 
-With `Config.autofix_typos`, step 2 has a stage before a correction is asked for (see Typos). With `Config.execute`, a
-query that has no issues is run, and a failure of the database is a correction too (see Execution).
+With `Config.autofix_typos`, and for the parameter header with `Config.use_parameters`, step 2 has a stage before a correction is asked for (see Typos and the header). With `Config.execute`, a query that has no issues is run, and a
+failure of the database is a correction too (see Execution). If the LLM client or the database raises in the middle, the run ends with an `LLMError` or a `DatabaseError` that keeps the attempts and the tokens so far (see Errors).
 
-The first query is not a correction: the LLM is asked at most `total_attempts + 1` times (plus one retry on the
-full schema if it declines on the filtered one). Defaults are 5 and 10.
+The first query is not a correction: a question costs at most `total_attempts + 1` requests (plus one when a decline on the filtered schema is asked again on the full one, and one for each empty reply), and each request is
+one call, up to four with skills. Defaults are 5 and 10 (ADR-046).
 
 ## Principles
 
@@ -46,7 +49,7 @@ full schema if it declines on the filtered one). Defaults are 5 and 10.
 - **Read-only by construction.** The validator rejects any query that can write; execution uses `ro_query`, which
   FalkorDB itself rejects for a write. Both are always on.
 - **Honest outcomes.** A query that fails validation is never returned as if it were fine: the status is
-  `valid`, `unanswerable` or `failed`, and every attempt is kept.
+  `valid`, `unanswerable` or `failed` (which can also mean two empty replies and no query), and every attempt is kept.
 - **Structured data, not parsed text.** The validator's issues carry typed fields; we read the fields and never
   match on description text, and a contract test pins the field names we depend on so an upstream change fails a
   test instead of degrading silently.
@@ -61,41 +64,42 @@ full schema if it declines on the filtered one). Defaults are 5 and 10.
 Public API: what `text2cypher`, `text2cypher.llm` and `text2cypher.schema` list in `__all__`, pinned by
 `tests/test_public_api.py`, which also fails if a module outside them lacks a leading underscore. Everything
 else is internal. Dependencies point down, and `import-linter` enforces it in CI: `_pipeline` -> `_workflow` ->
-(`_generation`, `_execution`, `_schema_source`) -> `_examples` -> `_results` -> `_validation` -> (`llm`, `schema`, `_config`, `_errors`),
+(`_generation`, `_execution`, `_schema_source`) -> `_examples` -> `_results` -> `_validation` -> (`llm`, `schema`, `_config`, `_errors`, `_skills`),
 and the package never imports `evals`. Each type lives with its domain (there is no shared `types` module).
 
 ```
 src/text2cypher/
 ├── __init__.py          the public API (re-exports, __all__, __version__); no logic
 ├── py.typed
-├── _pipeline.py         Text2Cypher: gets the snapshot, runs the workflow, executes
+├── _pipeline.py         Text2Cypher: gets the schema, runs the workflow (which validates and executes), clear_schema
 ├── _schema_source.py    SchemaSource: the schema and snapshot, new per read or kept per graph (and the missing-graph error)
 ├── _examples.py         sample_examples: a few example values of each plain property, read-only, with a timeout
 ├── _workflow.py         run_workflow: the loop and the escalation policy
 ├── _config.py           Config
-├── _results.py          Result, Attempt, Records, Status, SchemaScope
-├── _execution.py        execute_cypher: read-only, with a timeout
+├── _results.py          Result, Attempt, Records, Status, SchemaScope, total_usage, and the run errors LLMError and DatabaseError
+├── _execution.py        execute_cypher (read-only, with a timeout), run_query and Execution (an error as a value)
 ├── _skills/             Skill, skills(), load: guides to parts of FalkorDB's Cypher, one folder each (skill.md)
 ├── _errors.py           Text2CypherError, GraphNotFoundError (LLMError and DatabaseError are in _results.py, with the attempts they carry)
-├── llm/                 public: AsyncLLMClient, Completion, Usage, OpenAIClient, FakeLLM, Call
-│   ├── _base.py  _openai.py  _fake.py
-├── schema/              public: GraphSchema, Path, SchemaFilter, filter_schema, render_schema, schema_from_snapshot
+├── llm/                 public: AsyncChatClient, AsyncLLMClient, Completion, Message, Tool, ToolCall, Usage, OpenAIClient, FakeLLM, Call
+│   ├── _base.py  _openai.py  _fake.py  _adapt.py (as_client: the SDK's own client)
+├── schema/              public: GraphSchema, Index, Path, SchemaFilter, filter_schema, restrict_schema, render_schema, schema_from_snapshot
 │   ├── _model.py  _from_snapshot.py  _filter.py  _stopwords.py  _render.py
 ├── _validation/
 │   ├── validator.py     QueryValidator: the three cypher-guardrail async validators
 │   └── issues.py        Issue, Source, ValidationResult, drop_repeated_property_issues
 └── _generation/
-    ├── prompts.py       generator system prompt (rules built from lists) and the question message
+    ├── prompts.py       generator system prompt (rules built from lists, the checks, the skills section) and the question message
     ├── conversation.py  Round, the turns of a conversation (chat_messages) and the same as one message (folded_message)
     ├── problems.py      the issues of a query worded for the LLM, one handler per issue code; likely_typos
     ├── typos.py         fix_typos: replace a misspelled name in a query with the name it is a typo of
     ├── header.py        repair_header: the CYPHER header the way FalkorDB accepts it
     ├── schema_filter.py LLMSchemaFilter, FilterResult, AsyncSchemaFilter, apply_filter
+    ├── read_skill.py    READ_SKILL, chat_reading_skills: the tool loop that lets the model read skills
     ├── extract.py       extract_cypher: first fenced block, else the trimmed reply
-    └── generate.py      generate_cypher (a first query or a correction), Generation
-tests/                   mirrors src/: llm/ schema/ validation/ generation/ trial/, and test_workflow,
-                         test_config, test_pipeline, test_execution, test_examples, test_public_api;
-                         support.py, conftest.py
+    └── generate.py      generate_cypher (a first query or a correction, with or without skills), Generation, ask
+tests/                   mirrors src/: llm/ schema/ validation/ generation/ trial/, and test_workflow, test_pipeline,
+                         test_config, test_errors, test_execution, test_sample_examples, test_skills, test_examples (the
+                         quickstart), test_docs (the links and the index), test_public_api; support.py, conftest.py
 examples/                quickstart.py (embedded FalkorDB, scripted LLM, one correction); run by a test
 evals/                   the trial harness (not part of the package): dataset (types), datasets/ (movies, company),
                          replay, judge, metrics, trial, recorded/
@@ -106,7 +110,7 @@ docs/                    the Sphinx site (conf.py and the guides) and this docum
 
 ### Pipeline (`_pipeline.py`)
 
-`Text2Cypher(client, llm, config=None, schema_filter=filter_schema).run(question, graph)`:
+`Text2Cypher(client, llm, *, model=None, config=None, schema_filter=filter_schema).run(question, graph)` (`llm` may be the SDK's `AsyncOpenAI`, with `model`; see LLM):
 
 1. Asks its `SchemaSource` for the graph's `GraphSchema` and the source the validators answer from: a `Snapshot`
    (`types=True`) captured on every call, or, with `Config.schema_refresh_seconds`, a kept one (see Schema), with the
@@ -118,29 +122,32 @@ docs/                    the Sphinx site (conf.py and the guides) and this docum
    validator cannot disagree.
 4. If `config.execute`, the workflow also runs each query that passed validation (see Execution).
 
-Errors from the LLM or from the database while reading the schema or validating propagate; nothing is caught.
+An error from the database while reading the schema propagates, before any LLM call, since nothing has been paid for yet. An exception from the LLM client, or from FalkorDB while a query is validated, ends the run with an `LLMError` or
+a `DatabaseError` that keeps the attempts and the tokens so far (see Errors). `clear_schema(graph=None)` forgets what is kept of the schema and the example values.
 
 ### Workflow (`_workflow.py`)
 
-`run_workflow(question, schema, *, llm, validate, config, schema_filter=None, execute=None)` is the loop. The validator is
-passed as a callable, so the loop is tested without a database. State is explicit: the failed query to correct,
-the number of corrections, and whether the filtered schema has been given up.
+`run_workflow(question, schema, *, llm, validate, config, schema_filter=None, execute=None)` is the loop. The validator and the executor are
+passed as callables, so the loop is tested without a database. State is explicit: the rounds (the failed queries so far, each with its issues or
+its execution error and the skills it read), the number of corrections, whether the filtered schema has been given up, and the replies with no text in a row.
 
-- A filtered schema exists only if a `schema_filter` is given and keeps less than the whole schema. A filter that
+- A filtered schema exists only if a `schema_filter` is given (it may be async, `apply_filter` awaits it) and keeps less than the whole schema. A filter that
   keeps everything counts as no filter, and every attempt is `full`.
 - A decline (an empty fenced block) on the filtered schema may be the filter's doing, so the same request (the
   first query, or the same correction) is made again with the full schema, once, without using a correction;
   later corrections then use the full schema. Only a decline on the full schema is `unanswerable`. The empty
   attempt stays in `Result.attempts` with its usage.
+- A reply with **no text at all** (empty or only white space) is not a decline: `_no_query` records an attempt with `empty_reply`, and the loop asks the same request again once, exactly as it was (the
+  rounds, the schema and the scope do not change, and no correction is spent). A second one in a row ends the run as `failed` with no query. Any reply that has text resets the count. ADR-047.
 - An empty query is never validated: the validator would call it a syntax error and the loop would spend its whole
   budget on it.
 - `Config` rejects negative values and `total_attempts < attempts_w_filtered`.
 
 ### Results (`_results.py`)
 
-`Result` has `status`, the last `query`, every `Attempt` (query, `ValidationResult` or `None` for an empty query,
-schema scope, `Usage`), `usage`, `records` and `execution_error`. `Result.usage` is the sum of the attempts' usage,
-or `None` if any attempt did not report it. `Issue`, `ValidationResult` and `Attempt` are hashable (the dict inside
+`Result` has `status`, the last `query`, every `Attempt`, `usage`, `records`, `execution_error` and `filter_usage`. An `Attempt` has the query (empty for a decline or an empty reply), its `ValidationResult` (`None` for no query, and
+for a query the database failed to validate), the schema scope, `Usage`, `execution_error`, and the flags `auto_fixed`, `empty_reply` and `skills` (the ids read). `Result.usage` is the sum of the attempts' usage and
+`filter_usage` (`NO_TOKENS`, a zero, for a filter that asks no model), or `None` if any of them did not report it (`total_usage`, which the run errors use too). `Issue`, `ValidationResult` and `Attempt` are hashable (the dict inside
 an `Issue` is left out of its hash); a `Result` is hashable unless it holds `records`.
 
 ### Validation (`_validation/`)
@@ -163,7 +170,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   between two nodes is a cartesian product by design, and our own prompt example is one). A warning from either is corrected
   like any other issue.
 - **No severity levels.** Every reported issue triggers a correction. The candidates for a "warning" are all
-  defects here (`ParameterNotProvided`: we execute without parameters; `UnknownIndex`: the query would return
+  defects here (`ParameterNotProvided`: the query runs as it is, with only the parameters of its own `CYPHER` header; `UnknownIndex`: the query would return
   nothing or fail). Add severity only if a real non-blocking case appears.
 - A write query is reported as `cypher_guardrail.Error.WriteQuery` (source `syntax`) and is not valid.
   `QueryValidator` does not expose `read_only`: rejecting writes is the right default for generated queries.
@@ -182,8 +189,9 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 
 - `GraphSchema` is a data structure separate from reading and rendering, so filtering works on structure, not
   strings: `node_properties` (label -> property -> value types), `relationship_properties` (the same per type) and
-  `paths` (a tuple of one-hop `Path(source, type, target)`) and `indexes` (a tuple of `Index(entity, property, type)`,
-  with `type` `RANGE`, `FULLTEXT` or `VECTOR`, read from the snapshot; the filter keeps those of what it keeps).
+  `paths` (a tuple of one-hop `Path(source, type, target)`), `indexes` (a tuple of `Index(entity, property, type)`,
+  with `type` `RANGE`, `FULLTEXT` or `VECTOR`, read from the snapshot; the filter keeps those of what it keeps), `functions` (the instance's user-defined
+  functions as `library.function`, which belong to the instance, so the filter keeps them all) and `node_examples` and `relationship_examples` (see Example values).
 - `schema_from_snapshot(snapshot)` builds it from a `cypher-guardrail` `Snapshot` captured with `types=True`.
   FalkorDB has no declared schema, so the snapshot defines it by the data: names, properties with value types,
   and edges as label-set triples. Each edge expands into one `Path` per label pair (a multi-label node contributes
@@ -220,7 +228,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   skipping them also removes any chance of injecting through a name read from the database. Other names are quoted
   only through `quote_identifier`, and only when rendered.
 - `render_schema` produces the Neo4j-style text the generator prompt carries: `Node properties:`,
-  `Relationship properties:`, `The relationships:`, and `Indexes:` when there are any. Types are upper-cased and joined with `|`; names that are not
+  `Relationship properties:`, `The relationships:`, and `Indexes:` and `User-defined functions:` when there are any. Types are upper-cased and joined with `|`; names that are not
   plain identifiers are backtick-quoted; sections with nothing to say are left out.
 - **Filtering** (`filter_schema(schema, question)`, the default `schema_filter`) matches the question's words to
   the words of label and relationship-type names: Snowball stems (`snowballstemmer`), camelCase and underscore
@@ -230,12 +238,12 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   question that matches nothing keeps the whole schema, so a miss costs nothing; the lexical filter does not know
   that "people" means `Person`. A `SchemaFilter` is a plain synchronous callable `(schema, question) -> schema`, and `restrict_schema(schema, labels, types)` is what it ends with (public, so a filter of
   your own can too): the named entities, the paths that touch them, the entities on those paths, and their properties, indexes and examples.
-- **The LLM filter** (`LLMSchemaFilter(llm=None, *, min_entities=20)`, in `_generation/schema_filter.py` because it needs the LLM protocol and `schema` and `llm` are sibling layers). Choosing it replaces the
+- **The LLM filter** (`LLMSchemaFilter(llm=None, *, min_entities=20, model=None)`, in `_generation/schema_filter.py` because it needs the LLM protocol and `schema` and `llm` are sibling layers). Choosing it replaces the
   lexical filter: it runs alone and is shown the whole schema, so there is no pre-run to cut what it sees. The prompt: a system message that asks for the labels and relationship types a query would use, only names in the
   schema, the question as text and never instructions, and a reply of JSON in one fenced block; a user message with the labels and their property names (no types, examples or indexes), the paths and the question.
   The reply is read from a fenced block or the first `{...}`, names are matched without case and unknown ones dropped, and `restrict_schema` does the rest. An unusable reply (no JSON, no known name, empty lists), a
   call that raises, or a schema below `min_entities` (labels plus the types on paths) keeps the whole schema, so it can only cost tokens, never a question; a failed call is not counted, because nothing says what it cost.
-  Cancellation passes through. With `llm=None` the `Text2Cypher` makes a copy that has its own model, so a cheaper one can be given instead. It is a frozen dataclass, safe to share.
+  Cancellation passes through. With `llm=None` the `Text2Cypher` makes a copy (`bound`) that has the main client; `model=` asks the main client with another, cheaper model (`OpenAIClient.with_model`), or names the model of an SDK client the filter is given. It is a frozen dataclass, safe to share.
 - **Async filters and what they cost.** `Text2Cypher(schema_filter=...)` takes a sync function, an async one, or an `AsyncSchemaFilter`; `apply_filter` calls it, awaits it if it is awaitable, and wraps a bare
   `GraphSchema` as `FilterResult(schema, Usage(0, 0))`. `FilterResult.usage` is zero when no model was asked and `None` when one was and did not report. It goes on `Result.filter_usage` (zero by default) and
   into `Result.usage`, and into the `usage` of `LLMError` and `DatabaseError`, since it was paid for before the first attempt. `NO_TOKENS = Usage(0, 0)` is the zero the library uses for "asked no model", as for a fixed
@@ -263,7 +271,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   ignored; the synchronous `openai.OpenAI` is a `TypeError`, because the library is async and running it in a thread would break that. `Text2Cypher(client, llm, *, model=None, ...)` and
   `LLMSchemaFilter(llm=None, *, min_entities=20, model=None)` take it; for the filter, `llm=None` plus `model` asks the main client with another model (`OpenAIClient.with_model`, a copy that
   shares the SDK client and every setting), which needs an OpenAI client as the main one. `OpenAIClient` keeps its name and is the full-control form: the options live there.
-- `OpenAIClient(model, *, client=None, temperature=0, system_role=True, timeout=120.0, max_retries=None)` uses `AsyncOpenAI` (Chat Completions); pass your own client
+- `OpenAIClient(model, *, client=None, temperature=0, system_role=True, timeout=120.0, max_retries=None, tools=True)` uses `AsyncOpenAI` (Chat Completions); pass your own client
   for an OpenAI-compatible server, and `temperature=None` for a model that only accepts its own. The SDK's default timeout is 10 minutes and a question makes up to a dozen calls, so
   the client sets 2 minutes through `with_options` (a copy that shares the connection pool, so it also applies to a client you pass; `None` leaves that client's own). Retries are the
   SDK's (2 by default; the option changes them); a call that still fails ends the run with an `LLMError`. `FakeLLM` replays
@@ -274,7 +282,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 - **Extraction**: the first fenced block anywhere in the reply, else the whole reply trimmed (models add prose around
   fences, and validation catches what is left). A language tag (any word on the fence's own line, or `cypher`,
   `opencypher`, `cql` on a one-line block) is dropped; Windows line endings are accepted. An empty block means the
-  LLM declined. A reply with no fence at all is taken as the query: a prose refusal then fails validation and the
+  LLM declined. A reply with no text at all is not a decline: `Generation.empty` is set, and the loop asks again once (see Workflow, ADR-047). A reply with no fence at all is taken as the query: a prose refusal then fails validation and the
   loop recovers, and a heuristic that declined it could decline a valid query.
 - **Prompts** are our own wording. The generator system prompt has the task, a short FalkorDB rules block, two
   examples on another schema and the rendered schema; the user message is only the question, so the question is
@@ -386,6 +394,19 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   and its `nodes` leave out the start; `algo.MSF` yields `edges` and `nodes`; `algo.SSpaths` returns up to `pathCount` best paths from the source across all destinations (not one per destination; `0` is those that tie for best);
   `allShortestPaths` works only in `MATCH` and `shortestPath` only in `WITH` or `RETURN`.
 
+### Reading skills (`_generation/read_skill.py`)
+
+- `Config.use_skills` (off). The six prompt parts were approved one by one: a rule line when tools are offered ("Skills are short guides to parts of FalkorDB that are easy to get wrong. Read a skill, with read_skill, only when the question
+  needs what it covers, before you write the query."); a list after the rules, `- id: description` for each skill not yet read; "Skills you have already read:" and their text; the tool `read_skill(id)` ("Read one skill: what it is for, the syntax, and
+  an example that runs on FalkorDB."); its answers (`# name` and the guide, or "There is no skill with the id `x`. The ids are: ..."); and, for a client that cannot be offered tools, "Skills (guides to parts of FalkorDB that are easy to get wrong):" with every
+  skill's text and neither a rule nor a tool. The section sits after the rules and before the checks; the default prompt, without the option, is byte for byte what it was.
+- **The loop** (`chat_reading_skills`, per request): up to three rounds in which the model's calls are answered (every call id gets an answer, as OpenAI requires; a fifth call in one round, and any after, is answered "Too many skills at once: ask for fewer." and not read),
+  then a last call with `tool_choice="none"`, the tool still offered. A missing or non-string id is told to give one, and an unknown id is told the ids. The tokens of every call are summed (unknown if any is) into the attempt's `usage`, and the ids read, in order and without repeats,
+  are `Generation.skills` and `Attempt.skills`. If a call fails after others succeeded, `SkillLoopFailed` carries what they cost and `_write` turns it into an `LLMError` whose last attempt has no query and holds that usage.
+- **Remembering.** A `Round` has `skills_read`; the next request's prompt gets the union of its rounds' skills as "already read" and lists only the rest, so a correction does not read them again and the conversation stays plain turns (no tool turns are replayed). A decline's reading is not
+  kept (the declined request is asked again, and reads again).
+- `supports_tools(llm)` decides: a client that can be offered tools lists and reads; any other (`chat` without tools, or `complete` only) has every skill in the prompt, about 2,000 tokens a request and no extra call.
+
 ### Execution (`_execution.py`)
 
 - Off by default (`Config.execute = False`).
@@ -435,7 +456,9 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 - Per-test graphs are deleted afterwards (`movies_graph`, `film_graph`, an empty `new_graph`); the server is shared
   because starting and stopping it is slow. Every test that uses `falkordb_client` is marked `db` automatically,
   so `pytest -m "not db"` is the fast run. `tests/support.py` has the builders shared by the tests (a fenced
-  `reply`, `make_issue`, `invalid`/`VALID`, `ScriptedValidator`, a small hand-built schema).
+  `reply`, `make_issue`, `invalid`, `misspelled` and `VALID`, `ScriptedValidator` and `ScriptedExecutor`, a small hand-built schema, and `openai_client`,
+  `chat_reply` and `tool_calls_reply`, which build the real OpenAI SDK over a mock transport that can fail, time out and reply in turn).
+- Every mutation check of a new behaviour is done from a copy of the file and restored from it, never with `git checkout`, which also removes uncommitted work.
 - Async tests are marked `@pytest.mark.anyio` (module-level `pytestmark`).
 - `evals/` (not part of the package) is a trial harness: it replays questions through the real `Text2Cypher.run`
   with replies written by a model or a person, on a throwaway embedded server with a film graph, and judges the
@@ -455,31 +478,31 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 
 ## Not built yet
 
-Each item says what would bring it back.
+Each item says what would bring it back. What was here and is built now: the LLM filter (ADR-040), skills read by a tool (ADR-043, ADR-044), the path guidance (the `path-finding` skill), example values (ADR-034), the validation checklist
+(ADR-045), a model without a system role (`OpenAIClient(system_role=False)`) and feeding a runtime failure back (ADR-033).
 
-**Planned**
-- **Selective disclosure** (a `read_skill` tool call and skills we write): needs the chat protocol extended; to be planned.
-- **The LLM filter, measured**: it is built and opt-in, and has not been compared with the lexical filter on a large graph (both trial graphs were at the ceiling).
-- **Whether structured issues can inform escalation**: an unknown label that exists nowhere in the graph will not
-  be fixed by the full schema. Untested.
-- A sync facade, if demand appears (see Async only).
-- `run_many(questions, concurrency=N)` for dataset evaluation.
+**Built, and waiting to be measured**
+- The LLM filter, the skills, the check section and example values are all unmeasured: both trial graphs (6 and 36 labels, Claude Haiku) were at the ceiling, so none of them could show a difference. They show on a large schema and on
+  questions about paths, algorithms and functions, with a weaker model or harder cases; the harness is there for it.
+
+**Ideas**
+- Reading the API's finish reason, to say why a reply was empty or cut off (ADR-047): it needs `Completion` to carry it.
+- Reversing a wrong-direction path without the LLM: the validator gives the exact replacement. Wait for a sign that models get directions wrong often.
+- Feeding an empty result back to the LLM, opt-in: an empty result can be the right answer; a confidence like another project's would be a different design, and needs an answer-writing step.
+- A cap on the number of sampled properties of a very wide schema, and sampling only indexed or low-cardinality ones (ADR-034).
+- Skills of the user's own: needs a read-only check of their text. More skills, rewritten after running their claims on the server.
+- Adapters for other LLM apps (Anthropic, LangChain) and an `OpenAIResponsesClient`: the tool shapes map one to one (ADR-042).
+- Whether structured issues can inform escalation: an unknown label that exists nowhere in the graph will not be fixed by the full schema. Untested.
+- A sync facade, if demand appears (see Async only). `run_many(questions, concurrency=N)` for dataset evaluation.
 
 **Left out of the prompt, each until evaluation or a feature needs it**
-- `toLower()` guidance beyond the index rule: a function on an indexed property prevents index use, but a
-  case-insensitive match is often what the question means. Decide with the harness.
-- More path guidance (`algo.SSpaths`, weighted paths, `pathCount`, bounded variable-length paths); `LIMIT`
-  guidance (adding a limit the question did not ask for changes the answer).
-- Few-shot examples generated from the schema; the schema as inline Cypher patterns instead of the Neo4j-style
-  text; the schema in the user message instead of the system prompt (ours keeps a stable prefix for provider
-  prompt caching); a numbered `code: description` error format for the corrector.
-- Dynamic skills (the model reads guidance through tool calls: needs a tool-calling protocol, which a stateless
-  `chat(system, messages)` does not have); answer synthesis.
-- A model without a system role: an option on `OpenAIClient` that sends one user message.
+- `toLower()` guidance beyond the index rule: a function on an indexed property prevents index use, but a case-insensitive match is often what the question means. Decide with the harness.
+- `LIMIT` guidance (adding a limit the question did not ask for changes the answer).
+- Few-shot examples generated from the schema; the schema as inline Cypher patterns instead of the Neo4j-style text; the schema in the user message instead of the system prompt (ours keeps a stable prefix for provider
+  prompt caching); a numbered `code: description` error format for the correction turns.
+- Answer synthesis (a written answer from the rows).
 
 **Other**
-- Embedding similarity for the lexical filter (a heavy dependency, would be an extra) and property-name matching:
-  when the filter's miss rate justifies them.
-- Feeding an empty result back to the LLM; a row limit; converting rows to plain Python.
-- Metrics for the harness: success rate, self-healing rate (failures fixed by a correction), validation failures
-  by type.
+- Embedding similarity for the lexical filter (a heavy dependency, would be an extra) and property-name matching: when the filter's miss rate justifies them.
+- A row limit; converting rows to plain Python.
+- Metrics for the harness: success rate, self-healing rate (failures fixed by a correction), validation failures by type.

@@ -9,7 +9,7 @@ question ─► read the schema ─► keep what the question needs ─► ask t
 
 ## The steps
 
-1. **Read the schema** from the graph: the labels, the relationship types, each property with the types of its values, and every one-hop path such as `(:Person)-[:ACTED_IN]->(:Movie)`. FalkorDB has no declared schema, so this is what the data contains; see [](schema.md).
+1. **Read the schema** from the graph: the labels, the relationship types, each property with the types of its values, and every one-hop path such as `(:Person)-[:ACTED_IN]->(:Movie)`. FalkorDB has no declared schema, so this is what the data contains; see [The schema and its filter](schema.md).
 2. **Filter it** to what the question mentions, so that the prompt stays short on a large graph.
 3. **Ask the LLM** for one read-only query written in that schema.
 4. **Validate** the query against the graph (see below).
@@ -37,11 +37,11 @@ Validation is done by [cypher-guardrail](https://github.com/Killeroid/cypher-gua
 * **schema**: the labels, relationship types and paths it uses exist, and the paths are written in the direction they exist in;
 * **properties**: each property it reads exists on the label or relationship type it is read from.
 
-The query is valid when the syntax is fine and no validator reported an issue. See [](checks.md) for the issues and what is not checked.
+The query is valid when the syntax is fine and no validator reported an issue. See [What is and is not checked](checks.md) for the issues and what is not checked.
 
 ## Correcting
 
-When there are problems, the LLM is asked again with the same system message and the conversation so far: the question, then each query it wrote that failed, followed by a message that lists what was wrong with it. A problem that only repeats another (a property of a label already reported as unknown) is left out, and when only the direction of a path was wrong the message says what the path should be. The LLM answers with a new query, which is validated in turn. Because it is given every earlier attempt with its problems, it does not repeat a mistake it was told about. A client that cannot be given turns is given the same conversation as one message (see [](llm.md)).
+When there are problems, the LLM is asked again with the same system message and the conversation so far: the question, then each query it wrote that failed, followed by a message that lists what was wrong with it. A problem that only repeats another (a property of a label already reported as unknown) is left out, and when only the direction of a path was wrong the message says what the path should be. The LLM answers with a new query, which is validated in turn. Because it is given every earlier attempt with its problems, it does not repeat a mistake it was told about. A client that cannot be given turns is given the same conversation as one message (see [LLM clients](llm.md)).
 
 The first `attempts_w_filtered` corrections use the filtered schema, the later ones the full schema, until `total_attempts` corrections have been made. The first query is not a correction. When the schema changes from the filtered to the full one, the conversation goes on with the earlier turns, and the first message after the change says that the schema now lists the whole graph.
 
@@ -51,9 +51,29 @@ With `Config(autofix_typos=True)`, a query that fails validation because it miss
 
 With `use_parameters`, the header of the query gets the same treatment, with no option because it cannot change what a query means: FalkorDB wants `CYPHER` and the pairs separated by spaces, so `name='Ann', year=1990 MATCH ...` is a syntax error. It is written as `CYPHER name='Ann' year=1990 MATCH ...` (a comma inside a string or a list is left alone) and the query is validated again, at no cost in LLM calls. It is tried before the names, because a syntax error hides every other problem.
 
+## Skills
+
+With `Config(use_skills=True)`, the LLM is offered **skills**: short guides to parts of FalkorDB's Cypher that a model gets wrong without them. There are three:
+
+* `graph-algorithms`: PageRank, betweenness, connected components, communities and breadth-first search.
+* `path-finding`: `algo.SPpaths` and `algo.SSpaths` with their options, variable-length patterns, and where `shortestPath` works.
+* `functions`: the functions FalkorDB has, and what it lacks or spells differently (`!=`, `=~`, `datetime()`, `COUNT {}`).
+
+Each starts with a description of when to read it, then has Usage, Examples and Notes.
+
+* The prompt lists the skills, one line each with that description, and gives the model a tool, `read_skill`, to read one by its id. The model decides what to read. The intention is that a plain lookup reads nothing and "who is the most central person?" reads `graph-algorithms`; how well a model does this has not been measured.
+* **Each read is another call to the model.** A request can have up to three rounds of reads, after which the model must answer, so it can take up to four calls. Their tokens are in the `usage` of the attempt that wrote the query, and `attempt.skills` lists the skills it read. Reading one skill adds about 600 tokens.
+* A correction already has what was read: the skills the model read for an earlier query are in the prompt of the next one, so it does not read them again, and the conversation is only the question, the queries and their problems.
+* A client that cannot be offered tools (see [LLM clients](llm.md)) is given every skill in the prompt instead. That costs about 2,000 tokens in every request and no extra call.
+* The examples in the skills, and each claim that something is missing, are run against a real FalkorDB server whenever the library is tested, so a guide that is wrong fails the build.
+
 ## When the LLM declines
 
-An empty answer means the LLM sees no way to answer the question with the schema it was given. With a filtered schema that may be the filter's doing, so the same request is made again, once, with the full schema, and it does not use up a correction. An empty answer on the full schema ends the loop with `unanswerable`. An empty query is never validated.
+An empty fenced block means the LLM sees no way to answer the question with the schema it was given. With a filtered schema that may be the filter's doing, so the same request is made again, once, with the full schema, and it does not use up a correction. An empty block on the full schema ends the loop with `unanswerable`. An empty query is never validated.
+
+## When the LLM sends nothing
+
+A reply with no text at all, or only white space, is not a decline: the model did not say that it cannot answer, the call just returned nothing (a provider that cut it off or filtered it, for example). So the same request is made again, once, exactly as it was, and it does not use up a correction. If the second reply is empty too, the run ends as `failed`, not `unanswerable`, with no query: the question was not shown to be unanswerable. Each empty reply is an attempt with `attempt.empty_reply` set, and its tokens count. The count starts again after any reply that has text, so a long run is not given up on because of one empty reply early on.
 
 ## What the LLM sees
 
@@ -65,4 +85,4 @@ By default the schema shows up to three values of each plain property (text, num
 
 ## Cost
 
-A question costs one LLM call when the first query passes (and runs, if you execute it). At most it costs `total_attempts + 1` calls, plus one when an empty answer on the filtered schema is retried on the full one. Every call is recorded on the result with its token usage, if the client reports it. The schema is read from the graph on every `run` unless `schema_refresh_seconds` is set, and the validators answer from that same snapshot, so a query that is fine costs FalkorDB one request (to plan it). The example values add one small query per property the first time a structure of the graph is seen, and none after that.
+A question costs one LLM call when the first query passes (and runs, if you execute it). At most it costs `total_attempts + 1` requests, plus one when an empty answer on the filtered schema is retried on the full one, and each request is one call (up to four with `use_skills`, when the model reads skills). Every call is recorded on the result with its token usage, if the client reports it. The schema is read from the graph on every `run` unless `schema_refresh_seconds` is set, and the validators answer from that same snapshot, so a query that is fine costs FalkorDB one request (to plan it). The example values add one small query per property the first time a structure of the graph is seen, and none after that.

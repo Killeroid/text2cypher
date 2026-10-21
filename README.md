@@ -1,6 +1,7 @@
 # text2cypher
 
 **Generate validated Cypher queries from natural language text with LLMs**
+
 *Ask a question in plain language and get back a read-only Cypher query that has been checked against your [FalkorDB](https://www.falkordb.com/) graph.*
 
 [![CI](https://github.com/Killeroid/text2cypher/actions/workflows/ci.yml/badge.svg)](https://github.com/Killeroid/text2cypher/actions/workflows/ci.yml)
@@ -13,9 +14,10 @@ text2cypher asks an LLM to write the query, checks it against the real graph wit
 * **Grounded in your graph**: the prompt carries the schema read from the graph itself (labels, relationship types, properties with their value types, the paths that exist, and the indexes), cut down to what the question is about.
 * **Validated before it is returned**: syntax, schema (labels, relationship types, paths and their direction) and property checks. A query that could write to the graph is never valid.
 * **Self-correcting**: the problems found are written back to the LLM. If the cut-down schema does not get there, the loop moves to the full one.
-* **Honest outcomes**: `valid`, `unanswerable` (the LLM declined) or `failed` (the corrections ran out), with every attempt, its issues, the schema it used and its token usage.
+* **Honest outcomes**: `valid`, `unanswerable` (the LLM declined) or `failed` (the corrections ran out, or the LLM sent nothing twice), with every attempt, its issues, the schema it used and its token usage.
 * **LLM schema filter** (optional): on a large graph, a model chooses which labels and relationships a question needs, in place of the word matching; it can be a cheaper model than the main one.
 * **Example values**: the schema shows up to three values of each property, so the LLM writes values the way your graph does. They are real data sent to the LLM provider: `Config(example_values=0)` sends none.
+* **Skills** (optional): short guides to graph algorithms, path finding and the functions FalkorDB has, which the LLM reads with a tool only when a question needs them.
 * **Typos fixed without the LLM** (optional): a misspelled label, relationship type or property that is a likely typo of exactly one name in your graph is replaced and the query validated again, at no cost in LLM calls.
 * **Optional execution**: run the query read-only, with a timeout, and get the rows; a query that FalkorDB fails at run time is sent back to the LLM like any other problem.
 * **Bring your own LLM**: a small protocol, `chat` (the conversation as turns) or just `complete`, with an OpenAI client included. Async throughout.
@@ -64,7 +66,7 @@ There is also [a quickstart that needs no model and no server](https://github.co
 
 * **Checked**: the query is valid Cypher for FalkorDB, it cannot write, its parameters are provided (the prompt asks for values written in the query, so a `$name` is a problem), the labels, relationship types and paths exist in the direction used, and every property read exists on the label or relationship type it is read from.
 * **Not checked**: that the query means what the question meant. A query can be valid and still answer another question, for example by using a property with a similar name. Look at the query, or at the rows, before you rely on them.
-* **Known limits**: the prompts, the loop and the schema filter have been tried with Claude Haiku on two small test graphs (6 and 36 labels); the filter was measured offline on the larger one. How well they do on your data, on a large schema or with other models is not measured yet, so check the queries and the rows on your own questions (the [`evals/`](https://github.com/Killeroid/text2cypher/blob/main/evals/README.md) harness is there for that). Prompts and the filter's matching can change in a minor version; the public names (`text2cypher.__all__`, `text2cypher.llm` and `text2cypher.schema`) follow [semantic versioning](https://semver.org/).
+* **Known limits**: the prompts, the loop and the schema filter have been tried with Claude Haiku on two small test graphs (6 and 36 labels); the filter was measured offline on the larger one. The options added since, the LLM schema filter, skills, example values and the check in the prompt, have not been measured at all. How well they do on your data, on a large schema or with other models is not measured yet, so check the queries and the rows on your own questions (the [`evals/`](https://github.com/Killeroid/text2cypher/blob/main/evals/README.md) harness is there for that). Prompts and the filter's matching can change in a minor version; the public names (`text2cypher.__all__`, `text2cypher.llm` and `text2cypher.schema`) follow [semantic versioning](https://semver.org/).
 
 ## Documentation
 

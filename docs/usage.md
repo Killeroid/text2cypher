@@ -8,7 +8,7 @@ Python 3.12 or later.
 uv add text2cypher        # or: pip install text2cypher
 ```
 
-You need a FalkorDB graph that has data, reachable with the async client (`falkordb.asyncio`), and a model. The included client uses OpenAI's API and reads `OPENAI_API_KEY`; see [](llm.md) for other models.
+You need a FalkorDB graph that has data, reachable with the async client (`falkordb.asyncio`), and a model. The included client uses OpenAI's API and reads `OPENAI_API_KEY`; see [LLM clients](llm.md) for other models.
 
 ## Asking a question
 
@@ -61,9 +61,9 @@ for attempt in result.attempts:  # every query, in order
 |---|---|
 | `valid` | The last query passed every check. |
 | `unanswerable` | The LLM declined: the question is not about this graph, or asks to change data. There is no query. |
-| `failed` | The corrections ran out. The last attempt has the last query and what was still wrong. |
+| `failed` | The corrections ran out. The last attempt has the last query and what was still wrong. It can also have no query at all: the LLM sent no text twice in a row (`attempt.empty_reply`). |
 
-Each {py:class}`~text2cypher.Issue` in `attempt.validation.issues` says which validator found it (`source`: `syntax`, `schema` or `properties`), has a `code` and a `description`, and keeps cypher-guardrail's own structured issue in `raw`, so nothing has to be read out of text. See [](checks.md).
+Each {py:class}`~text2cypher.Issue` in `attempt.validation.issues` says which validator found it (`source`: `syntax`, `schema` or `properties`), has a `code` and a `description`, and keeps cypher-guardrail's own structured issue in `raw`, so nothing has to be read out of text. See [What is and is not checked](checks.md).
 
 `result.usage` adds up the tokens of all attempts, and is `None` if any call did not report them.
 
@@ -81,12 +81,13 @@ agent = Text2Cypher(client, llm, config=Config(attempts_w_filtered=2, total_atte
 | `total_attempts` | `10` | Corrections in all, filtered and full. The first query is not a correction, so the LLM is asked at most `total_attempts + 1` times (plus one retry on the full schema if it declines on the filtered one). |
 | `execute` | `False` | Run a query that passed validation, and correct it if FalkorDB fails it; see below. |
 | `execute_timeout_ms` | `10000` | Stop an execution after this many milliseconds; `None` for no limit. |
-| `check_types` | `True` | Report a property compared with a value of another type, and `sum`, `avg` and the like of a property that holds no numbers. See [](checks.md). |
-| `check_performance` | `False` | Report a cartesian product, a scan of every node and a path with no upper bound. See [](checks.md). |
+| `check_types` | `True` | Report a property compared with a value of another type, and `sum`, `avg` and the like of a property that holds no numbers. See [What is and is not checked](checks.md). |
+| `check_performance` | `False` | Report a cartesian product, a scan of every node and a path with no upper bound. See [What is and is not checked](checks.md). |
 | `use_parameters` | `False` | The LLM puts the values in a `CYPHER` header and uses parameters, which FalkorDB can plan once and reuse. `Result.query` is still one string that runs as it is. A header with commas or without `CYPHER` is repaired without the LLM. |
-| `example_values` | `3` | Example values of each property shown to the LLM; they are data from your graph that goes to the LLM provider, so `0` sends none. See [](schema.md#example-values). |
-| `autofix_typos` | `False` | Fix a misspelled label, relationship type or property without the LLM when exactly one name of the graph is a likely typo of it; the fixed query is validated again. See [](how-it-works.md). |
-| `schema_refresh_seconds` | `None` | Keep a graph's schema and check it for changes at most this often; `None` reads it on every run. See [](schema.md). |
+| `example_values` | `3` | Example values of each property shown to the LLM; they are data from your graph that goes to the LLM provider, so `0` sends none. See [Example values](schema.md#example-values). |
+| `use_skills` | `False` | Offer the LLM short guides to parts of FalkorDB's Cypher that are easy to get wrong, to read when a question needs them. Each read is another call to the model. See [Skills](how-it-works.md#skills). |
+| `autofix_typos` | `False` | Fix a misspelled label, relationship type or property without the LLM when exactly one name of the graph is a likely typo of it; the fixed query is validated again. See [How it works](how-it-works.md). |
+| `schema_refresh_seconds` | `None` | Keep a graph's schema and check it for changes at most this often; `None` reads it on every run. See [The schema and its filter](schema.md). |
 
 `Config` rejects negative values and `total_attempts < attempts_w_filtered`. The LLM is sent your question, the schema, up to `example_values` real values of each property, and the problems of its earlier attempts, and, with `execute`, FalkorDB's error for a query that fails.
 
@@ -130,7 +131,7 @@ A catch of your provider's own exception (for example the OpenAI `RateLimitError
 * Errors from the database while reading the schema, before any LLM call, are not caught: they reach you as they are.
 * A timeout or a lost connection while executing is recorded in `result.execution_error`, as above; an error from FalkorDB about the query is corrected, as above.
 
-If a question did not go as you wanted, [](troubleshooting.md) says what to look at for each outcome.
+If a question did not go as you wanted, [When a question fails](troubleshooting.md) says what to look at for each outcome.
 
 ## Try it without a server or a model
 

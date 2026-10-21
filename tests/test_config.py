@@ -31,6 +31,10 @@ def test_typos_are_not_fixed_without_the_llm_by_default():
     assert Config().autofix_typos is False
 
 
+def test_skills_are_not_offered_by_default():
+    assert Config().use_skills is False
+
+
 def test_config_defaults():
     assert Config() == Config(attempts_w_filtered=5, total_attempts=10)
 

@@ -11,6 +11,7 @@ from text2cypher._generation import (
     AsyncSchemaFilter,
     Generation,
     Round,
+    SkillLoopFailed,
     apply_filter,
     fix_typos,
     generate_cypher,
@@ -23,6 +24,7 @@ from text2cypher._results import (
     LLMError,
     Result,
     SchemaScope,
+    Status,
 )
 from text2cypher._validation import ValidationResult
 from text2cypher.llm import AsyncChatClient, AsyncLLMClient, Usage
@@ -32,6 +34,8 @@ from text2cypher.schema import GraphSchema, SchemaFilter
 # need a second round of fixes; a third is for the rare case of another layer. The header of a
 # query with parameters is repaired first, because a syntax error hides every other problem
 _FIX_ROUNDS = 3
+# A reply with no text at all is a call that returned nothing: it is made again once
+_EMPTY_RETRIES = 1
 
 
 async def run_workflow(
@@ -79,25 +83,27 @@ async def run_workflow(
     corrections = 0
     # The LLM declined on the filtered schema, which is no longer used
     escalated = False
+    # Replies with no text at all, in a row: the same request is made once more
+    empties = 0
 
     while True:
         scope, used = _choose_schema(
             schema, filtered, config, corrections=corrections, escalated=escalated
         )
         rounds = _with_schema_note(rounds, attempts, scope)
-        try:
-            generation = await generate_cypher(
-                llm, used, question, rounds, parameterize=config.use_parameters
-            )
-        except Exception as error:
-            raise LLMError.after(question, attempts, error, filter_usage) from error
+        generation = await _write(
+            llm, used, question, rounds, scope, attempts, filter_usage, config
+        )
+        empties = empties + 1 if generation.empty else 0
         if not generation.query:
-            attempts.append(Attempt("", None, scope, generation.usage))
-            if scope == "full":
-                return Result(
-                    question, "unanswerable", tuple(attempts), filter_usage=filter_usage
-                )
-            escalated = True
+            ended = _no_query(
+                question, generation, scope, attempts, empties, filter_usage
+            )
+            if ended is not None:
+                return ended
+            # A decline on the filtered schema is asked again on the full one; a reply
+            # with no text at all is asked again as it was
+            escalated = escalated or not generation.empty
             continue
 
         try:
@@ -111,7 +117,13 @@ async def run_workflow(
             )
         except RedisError as error:
             # The query was written and paid for: it is kept, with no validation
-            unchecked = Attempt(generation.query, None, scope, generation.usage)
+            unchecked = Attempt(
+                generation.query,
+                None,
+                scope,
+                generation.usage,
+                skills=generation.skills,
+            )
             raise DatabaseError.after(
                 question, [*attempts, unchecked], error, filter_usage
             ) from error
@@ -131,7 +143,40 @@ async def run_workflow(
                 question, "failed", tuple(attempts), None, ran.error, filter_usage
             )
         corrections += 1
-        rounds.append(Round(query, validation.issues, ran.error))
+        rounds.append(
+            Round(query, validation.issues, ran.error, skills_read=generation.skills)
+        )
+
+
+def _no_query(
+    question: str,
+    generation: Generation,
+    scope: SchemaScope,
+    attempts: list[Attempt],
+    empties: int,
+    filter_usage: Usage | None,
+) -> Result | None:
+    """Record a reply that has no query, and the result if it ends the run.
+
+    An explicit empty block is the LLM declining: on the full schema that is
+    ``unanswerable``. A reply with no text at all is a call that returned nothing, and
+    the second one in a row is ``failed``. Otherwise the request is asked again.
+    """
+    attempts.append(
+        Attempt(
+            "",
+            None,
+            scope,
+            generation.usage,
+            skills=generation.skills,
+            empty_reply=generation.empty,
+        )
+    )
+    status: Status = "failed" if generation.empty else "unanswerable"
+    ended = empties > _EMPTY_RETRIES if generation.empty else scope == "full"
+    if not ended:
+        return None
+    return Result(question, status, tuple(attempts), filter_usage=filter_usage)
 
 
 def _choose_schema(
@@ -172,7 +217,9 @@ async def _check(
     the one that counts; if it never does, it is dropped and the query the LLM wrote stands.
     """
     validation = await validate(generation.query)
-    attempt = Attempt(generation.query, validation, scope, generation.usage)
+    attempt = Attempt(
+        generation.query, validation, scope, generation.usage, skills=generation.skills
+    )
     if validation.valid or not (header or typos):
         return [attempt], validation
     query, now = generation.query, validation
@@ -190,6 +237,40 @@ async def _check(
                 Attempt(query, now, scope, Usage(0, 0), auto_fixed=True),
             ], now
     return [attempt], validation
+
+
+async def _write(
+    llm: AsyncChatClient | AsyncLLMClient,
+    schema: GraphSchema,
+    question: str,
+    rounds: Sequence[Round],
+    scope: SchemaScope,
+    attempts: Sequence[Attempt],
+    filter_usage: Usage | None,
+    config: Config,
+) -> Generation:
+    """The next query, or an ``LLMError`` that keeps what was paid for.
+
+    A call that fails after others of the same request succeeded (the model had read
+    skills) leaves an attempt with no query, which holds their tokens.
+    """
+    try:
+        return await generate_cypher(
+            llm,
+            schema,
+            question,
+            rounds,
+            parameterize=config.use_parameters,
+            skills=config.use_skills,
+        )
+    except SkillLoopFailed as failed:
+        partial = [Attempt("", None, scope, failed.usage)] if failed.calls else []
+        cause = failed.__cause__ or failed
+        raise LLMError.after(
+            question, [*attempts, *partial], cause, filter_usage
+        ) from cause
+    except Exception as error:
+        raise LLMError.after(question, attempts, error, filter_usage) from error
 
 
 def _with_schema_note(

@@ -13,6 +13,7 @@ from text2cypher import (
     GraphNotFoundError,
     LLMSchemaFilter,
     Text2Cypher,
+    ToolCall,
     Usage,
 )
 from text2cypher._generation.schema_filter import _SYSTEM as _FILTER_SYSTEM
@@ -701,6 +702,8 @@ async def test_the_troubleshooting_page_reads_a_result_with_the_names_it_documen
         lines.append(
             f"{number}. [{attempt.schema_scope}] {attempt.query or '(declined)'}"
         )
+        if attempt.skills:
+            lines.append(f"   read: {', '.join(attempt.skills)}")
         if attempt.auto_fixed:
             lines.append("   repaired without the LLM")
         if attempt.execution_error:
@@ -906,3 +909,44 @@ async def test_a_filter_with_its_own_sdk_client_and_model_leaves_the_main_one_al
 
     assert [r["model"] for r in cheap_requests] == ["small"]
     assert len(main.calls) == 1
+
+
+async def test_a_model_that_reads_the_path_finding_skill_writes_a_query_that_runs(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    query = (
+        "MATCH (p:Person {name: 'Keanu'}), (m:Movie {title: 'Matrix'}) "
+        "CALL algo.SPpaths({sourceNode: p, targetNode: m, relTypes: ['ACTED_IN']}) YIELD path "
+        "RETURN [n IN nodes(path) | coalesce(n.name, n.title)] AS route"
+    )
+    llm = FakeLLM(
+        [
+            Completion(
+                "", Usage(20, 5), (ToolCall("c", "read_skill", {"id": "path-finding"}),)
+            ),
+            Completion(reply(query), Usage(10, 4)),
+        ]
+    )
+
+    result = await Text2Cypher(
+        falkordb_client, llm, config=Config(use_skills=True, execute=True)
+    ).run("How is Keanu connected to the Matrix?", movies_graph)
+
+    assert result.status == "valid"
+    assert result.attempts[0].skills == ("path-finding",)
+    assert result.usage == Usage(30, 9)
+    assert result.records is not None
+    assert result.records.rows == ((["Keanu", "Matrix"],),)
+    assert "Skills (read one with read_skill, by its id):" in llm.calls[0].system
+
+
+async def test_a_reply_with_no_text_on_a_real_graph_is_asked_again(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    llm = FakeLLM(["", reply("MATCH (p:Person) RETURN p.name")])
+
+    result = await Text2Cypher(falkordb_client, llm).run("Who?", movies_graph)
+
+    assert result.status == "valid"
+    assert [a.empty_reply for a in result.attempts] == [True, False]
+    assert len(llm.calls) == 2

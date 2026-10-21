@@ -31,6 +31,11 @@ class Attempt:
             names replaced (``Config.autofix_typos``), or the parameter header written the
             way FalkorDB accepts (``Config.use_parameters``). It cost no tokens, and it was
             not written by a request, so it is not a correction.
+        skills: The ids of the skills the LLM read while it wrote this query (``Config.use_skills``).
+            The tokens of reading them are in ``usage``.
+        empty_reply: The LLM sent no text at all. That is not a decline (an explicit empty
+            block): the same request is made once more, and a second empty reply ends the
+            run as ``failed``.
     """
 
     query: str
@@ -39,6 +44,8 @@ class Attempt:
     usage: Usage | None
     execution_error: str | None = None
     auto_fixed: bool = False
+    skills: tuple[str, ...] = ()
+    empty_reply: bool = False
 
 
 # What something that asked no model used: a zero, where ``None`` is "not known"
@@ -82,7 +89,8 @@ class Result:
     ``valid``: the last query passed validation (and ran, if execution is on).
     ``unanswerable``: the LLM declined, so there is no query. ``failed``: the corrections
     ran out; the last attempt has the last query and its issues, or the error FalkorDB
-    gave when it ran it.
+    gave when it ran it. A ``failed`` result can also have no query at all: the LLM sent
+    no text twice in a row (see ``Attempt.empty_reply``).
 
     When execution is on, a query that FalkorDB rejects or fails is corrected like one
     that fails validation. The status is ``valid`` with ``records`` when a query runs,

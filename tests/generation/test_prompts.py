@@ -6,9 +6,11 @@ from text2cypher import GraphSchema
 from text2cypher._generation.prompts import (
     FULLTEXT_EXAMPLE,
     PARAMETER_EXAMPLE,
+    SkillsOffer,
     generator_system,
     generator_user,
 )
+from text2cypher._skills import skills as shipped_skills
 from text2cypher.schema import Index
 
 SCHEMA = FILM_SCHEMA
@@ -157,3 +159,67 @@ def test_parameters_replace_the_rule_about_inline_values():
 
 def test_a_correction_uses_the_same_rules_as_the_first_query():
     assert generator_system(SCHEMA, parameterize=True) != generator_system(SCHEMA)
+
+
+def test_without_skills_the_prompt_says_nothing_about_them():
+    prompt = generator_system(SCHEMA)
+
+    assert "read_skill" not in prompt
+    assert "Skills" not in prompt
+
+
+def test_with_tools_the_prompt_lists_the_skills_and_how_to_read_one():
+    prompt = generator_system(SCHEMA, skills=SkillsOffer(tools=True))
+
+    assert (
+        "- Skills are short guides to parts of FalkorDB that are easy to get wrong. Read a skill, "
+        "with read_skill, only when the question needs what it covers, before you write the query."
+    ) in prompt
+    assert "Skills (read one with read_skill, by its id):\n" in prompt
+    for skill in shipped_skills().values():
+        assert f"- {skill.id}: {skill.description}" in prompt
+        # the guide itself is not in the prompt: the model reads it when it needs it
+        assert skill.body not in prompt
+
+
+def test_the_skills_come_after_the_rules_and_before_the_checks():
+    prompt = generator_system(SCHEMA, skills=SkillsOffer(tools=True))
+
+    assert (
+        prompt.index("Rules:")
+        < prompt.index("Skills (read one")
+        < prompt.index("Before you answer")
+        < prompt.index("Schema:")
+    )
+
+
+def test_what_was_read_is_in_the_prompt_and_only_the_rest_is_listed():
+    prompt = generator_system(
+        SCHEMA, skills=SkillsOffer(tools=True, read=("path-finding",))
+    )
+
+    assert "Skills you have already read:\n\n# Path finding" in prompt
+    assert shipped_skills()["path-finding"].body in prompt
+    assert "- path-finding:" not in prompt
+    assert "- functions:" in prompt
+    assert "- graph-algorithms:" in prompt
+
+
+def test_when_every_skill_has_been_read_there_is_nothing_left_to_list_or_ask_for():
+    prompt = generator_system(
+        SCHEMA, skills=SkillsOffer(tools=True, read=tuple(shipped_skills()))
+    )
+
+    assert "Skills (read one" not in prompt
+    assert "Read a skill, with read_skill" not in prompt
+    assert "Skills you have already read:" in prompt
+
+
+def test_for_a_client_that_cannot_be_offered_tools_every_skill_is_in_the_prompt():
+    prompt = generator_system(SCHEMA, skills=SkillsOffer(tools=False))
+
+    assert "Skills (guides to parts of FalkorDB that are easy to get wrong):" in prompt
+    for skill in shipped_skills().values():
+        assert skill.text in prompt
+    assert "read_skill" not in prompt
+    assert "Skills (read one" not in prompt

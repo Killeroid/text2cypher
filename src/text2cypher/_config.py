@@ -41,6 +41,12 @@ class Config:
     not, the LLM gets the query it wrote, as usual. Off by default: a fix can make a query
     valid and still not what the question meant.
 
+    With ``use_skills`` the LLM is offered short guides to parts of FalkorDB's Cypher that
+    are easy to get wrong (graph algorithms, path finding, functions). It sees what each is
+    for, and reads a skill, by calling a tool, only when the question needs it; each read
+    is another call to the model, and a later correction already has what was read. A client
+    that cannot be offered tools is given every skill in the prompt instead.
+
     The schema shows up to ``example_values`` values of each property (``title: STRING (e.g.
     'Alien', 'Heat')``), so the LLM writes a value the way the graph does: spelling, case,
     format. They are read from the graph, one small query per property, and are **data from
@@ -66,6 +72,7 @@ class Config:
         check_performance: Report queries that may be expensive, which is off by default.
         example_values: How many example values of each property to show the LLM; ``0``
             sends none.
+        use_skills: Offer the LLM the skills, to read when a question needs them.
         autofix_typos: Fix a misspelled name in a query without the LLM when exactly one
             name of the graph is a likely typo of it.
         schema_refresh_seconds: Keep the schema of a graph and check it for changes at
@@ -82,6 +89,7 @@ class Config:
     check_performance: bool = False
     example_values: int = 3
     autofix_typos: bool = False
+    use_skills: bool = False
 
     def __post_init__(self) -> None:
         if self.attempts_w_filtered < 0:

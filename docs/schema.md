@@ -72,7 +72,7 @@ The relationships:
 (:Movie)-[:IN_GENRE]->(:Genre)
 ```
 
-The filter is lexical. It does not know that "people" means `Person` or that "films" means `Movie`, and it does not match property names, so for such a question it keeps the whole schema (or too little). To let a model choose, see [Asking an LLM to filter](#asking-an-llm-to-filter). Too little is not final: the first `attempts_w_filtered` corrections use the filtered schema, the later ones the full schema, and an empty answer on the filtered schema is retried on the full one (see [](how-it-works.md)).
+The filter is lexical. It does not know that "people" means `Person` or that "films" means `Movie`, and it does not match property names, so for such a question it keeps the whole schema (or too little). To let a model choose, see [Asking an LLM to filter](#asking-an-llm-to-filter). Too little is not final: the first `attempts_w_filtered` corrections use the filtered schema, the later ones the full schema, and an empty answer on the filtered schema is retried on the full one (see [How it works](how-it-works.md)).
 
 ## Your own filter
 

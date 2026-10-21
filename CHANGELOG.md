@@ -6,6 +6,19 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Changed
 
+- A reply from the LLM with no text at all (or only white space) is no longer taken as a decline. It is a call that returned nothing, so the same request is made once more, exactly as it was, and it costs no correction; a second empty reply in
+  a row ends the run as `failed`, with no query, and not as `unanswerable`. `Attempt.empty_reply` marks each such attempt. An explicit empty fenced block is still a decline, as before. Before, a provider that returned nothing gave `unanswerable`.
+
+### Added
+
+- `Config(use_skills=True)` (off by default): the LLM is offered skills, short guides to parts of FalkorDB's Cypher that a model gets wrong without them: `graph-algorithms` (PageRank, betweenness, components, communities, BFS), `path-finding`
+  (`algo.SPpaths` and `algo.SSpaths` with their options, variable-length patterns, where `shortestPath` works) and `functions` (the functions FalkorDB has, and what it lacks or spells differently, such as `!=`, `=~`, `datetime()` and `COUNT {}`).
+  The prompt lists them with a line each, and a tool, `read_skill`, reads one when a question needs it (up to three rounds, then the model must answer). **Each read is another call to the model.** What was read is in the prompt of the next request, so a
+  correction does not read it again. A client that cannot be offered tools has every skill in the prompt instead. `Attempt.skills` lists the skills read for a query and their tokens are in `Attempt.usage`. The examples of every skill, and each claim that something is missing, are run against a
+  real FalkorDB server whenever the library is tested. The path-finding skill is adapted from a FalkorDB skill, under its MIT license, whose notice ships with the package (`THIRD_PARTY_NOTICES`).
+
+### Changed
+
 - **Breaking, for a client of your own:** `AsyncChatClient.chat` takes the tools a model may be offered: `chat(system, messages, tools=None, *, tool_choice="auto")`. A client with the old two-argument `chat` keeps
   working at run time, because tools are offered only to a client that takes them (it says so with `supports_tools`, or its `chat` takes `tools` or keyword arguments), but a type checker reports the new signature.
   `Completion`, `Message` and `Call` have more fields (with defaults), so code that unpacks them into a fixed number of names must read the fields by name. See `MIGRATION.md`.

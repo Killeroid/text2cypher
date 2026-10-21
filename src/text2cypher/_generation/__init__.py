@@ -2,6 +2,7 @@ from text2cypher._generation.conversation import Round
 from text2cypher._generation.extract import extract_cypher
 from text2cypher._generation.generate import Generation, generate_cypher
 from text2cypher._generation.header import repair_header
+from text2cypher._generation.read_skill import SkillLoopFailed
 from text2cypher._generation.schema_filter import (
     AsyncSchemaFilter,
     FilterResult,
@@ -16,6 +17,7 @@ __all__ = [
     "Generation",
     "LLMSchemaFilter",
     "Round",
+    "SkillLoopFailed",
     "apply_filter",
     "extract_cypher",
     "fix_typos",

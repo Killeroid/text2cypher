@@ -10,17 +10,25 @@ from text2cypher._generation.conversation import (
     folded_message,
 )
 from text2cypher._generation.extract import extract_cypher
-from text2cypher._generation.prompts import generator_system
+from text2cypher._generation.prompts import SkillsOffer, generator_system
+from text2cypher._generation.read_skill import chat_reading_skills
 from text2cypher.llm import AsyncChatClient, AsyncLLMClient, Completion, Message, Usage
+from text2cypher.llm._base import supports_tools
 from text2cypher.schema import GraphSchema
 
 
 @dataclass(frozen=True, slots=True)
 class Generation:
-    """A query an LLM wrote, empty if it declined, and the tokens that cost."""
+    """A query an LLM wrote, empty if it declined, and the tokens that cost.
+
+    ``empty`` is a reply with no text at all, which is not the same as a decline (an empty
+    fenced block): it is a call that returned nothing.
+    """
 
     query: str
     usage: Usage | None
+    skills: tuple[str, ...] = ()
+    empty: bool = False
 
 
 async def generate_cypher(
@@ -30,6 +38,7 @@ async def generate_cypher(
     rounds: Sequence[Round] = (),
     *,
     parameterize: bool = False,
+    skills: bool = False,
 ) -> Generation:
     """A query for ``question`` over ``schema``; empty if the LLM says it has none.
 
@@ -37,14 +46,43 @@ async def generate_cypher(
     Each correction uses the same system prompt as the first query. A client that has
     ``chat`` is given the conversation as turns; one with only ``complete`` is given it
     as one message.
+
+    With ``skills``, a client that can be offered tools lists the skills and may read the
+    ones it needs (``Generation.skills`` says which, and the skills it read before are in
+    the prompt already); any other client has every skill in the prompt.
+
+    Raises:
+        SkillLoopFailed: If a call fails after others of the same request succeeded.
     """
+    offer = None
+    if skills:
+        read = tuple(dict.fromkeys(i for round_ in rounds for i in round_.skills_read))
+        offer = SkillsOffer(supports_tools(llm), read)
+    system = generator_system(schema, parameterize=parameterize, skills=offer)
+    messages = chat_messages(question, rounds, schema, parameterize=parameterize)
+    if offer is not None and offer.tools:
+        completion, read_now, usage = await chat_reading_skills(
+            cast("AsyncChatClient", llm), system, messages
+        )
+        return Generation(
+            extract_cypher(completion.text),
+            usage,
+            read_now,
+            empty=_no_text(completion),
+        )
     completion = await ask(
         llm,
-        generator_system(schema, parameterize=parameterize),
-        chat_messages(question, rounds, schema, parameterize=parameterize),
+        system,
+        messages,
         folded_message(question, rounds, schema, parameterize=parameterize),
     )
-    return Generation(extract_cypher(completion.text), completion.usage)
+    return Generation(
+        extract_cypher(completion.text), completion.usage, empty=_no_text(completion)
+    )
+
+
+def _no_text(completion: Completion) -> bool:
+    return not completion.text.strip()
 
 
 async def ask(

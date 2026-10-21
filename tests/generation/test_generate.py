@@ -99,3 +99,21 @@ async def test_a_question_that_is_an_instruction_only_goes_in_the_user_message()
     [call] = llm.calls
     assert question not in call.system
     assert call.user == generator_user(question)
+
+
+@pytest.mark.parametrize(
+    ("text", "empty", "query"),
+    [
+        ("", True, ""),
+        ("  \n\t", True, ""),
+        ("```cypher\n```", False, ""),
+        ("```cypher\nRETURN 1\n```", False, "RETURN 1"),
+        ("I cannot do that.", False, "I cannot do that."),
+    ],
+)
+async def test_a_reply_with_no_text_is_told_from_a_decline_and_from_a_reply_with_a_query(
+    text: str, empty: bool, query: str
+):
+    generation = await generate_cypher(FakeLLM([text]), SCHEMA, "q")
+
+    assert (generation.empty, generation.query) == (empty, query)

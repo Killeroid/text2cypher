@@ -19,9 +19,14 @@ from text2cypher._config import Config
 from text2cypher._execution import Execution
 from text2cypher._generation import FilterResult, Round, generate_cypher
 from text2cypher._generation.conversation import SCHEMA_NOTE, chat_messages
-from text2cypher._generation.prompts import generator_system, generator_user
+from text2cypher._generation.prompts import (
+    SkillsOffer,
+    generator_system,
+    generator_user,
+)
+from text2cypher._generation.read_skill import READ_SKILL
 from text2cypher._workflow import run_workflow
-from text2cypher.llm import Completion, FakeLLM, Usage
+from text2cypher.llm import Completion, FakeLLM, ToolCall, Usage
 from text2cypher.schema import GraphSchema
 
 pytestmark = pytest.mark.anyio
@@ -952,3 +957,231 @@ async def test_the_filters_tokens_are_kept_when_a_run_stops_in_the_middle():
 
     assert raised.value.filter_usage == Usage(30, 6)
     assert raised.value.usage == Usage(40, 10)
+
+
+READING = Usage(20, 5)
+
+
+def reads(skill_id: str, usage: Usage | None = READING) -> Completion:
+    return Completion("", usage, (ToolCall("c", "read_skill", {"id": skill_id}),))
+
+
+async def test_the_skills_read_are_on_the_attempt_and_their_tokens_in_its_usage():
+    llm = FakeLLM([reads("path-finding"), Completion(reply("a"), Usage(10, 4))])
+
+    result = await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(VALID),
+        config=Config(use_skills=True),
+    )
+
+    assert [a.skills for a in result.attempts] == [("path-finding",)]
+    assert result.attempts[0].usage == Usage(30, 9)
+    assert result.usage == Usage(30, 9)
+
+
+async def test_a_correction_has_what_was_read_in_its_prompt_and_replays_none_of_the_reading():
+    llm = FakeLLM(
+        [
+            reads("path-finding"),
+            Completion(reply("a"), Usage(10, 4)),
+            Completion(reply("b"), Usage(7, 2)),
+        ]
+    )
+
+    result = await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(invalid("x"), VALID),
+        config=Config(use_skills=True),
+    )
+
+    assert result.status == "valid"
+    assert [a.skills for a in result.attempts] == [("path-finding",), ()]
+    correction = llm.calls[2]
+    assert correction.system == generator_system(
+        FULL, skills=SkillsOffer(tools=True, read=("path-finding",))
+    )
+    assert [m.role for m in correction.messages] == ["user", "assistant", "user"]
+    assert correction.tools == (READ_SKILL,)
+
+
+async def test_the_skills_it_read_for_a_failed_query_stay_in_the_prompt_of_every_later_one():
+    llm = FakeLLM(
+        [
+            reads("path-finding"),
+            reply("a"),
+            reads("functions"),
+            reply("b"),
+            reply("c"),
+        ]
+    )
+
+    await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(invalid("x"), invalid("y"), VALID),
+        config=Config(use_skills=True),
+    )
+
+    third = llm.calls[-1].system
+    assert "# Path finding" in third
+    assert "# Functions" in third
+    assert "- graph-algorithms:" in third
+    assert "- path-finding:" not in third
+
+
+async def test_a_run_that_stops_while_reading_skills_keeps_what_the_earlier_calls_cost():
+    from text2cypher import LLMError
+
+    llm = FakeLLM([reads("functions"), ConnectionError("down")])
+
+    with pytest.raises(LLMError) as raised:
+        await run_workflow(
+            "Q",
+            FULL,
+            llm=llm,
+            validate=ScriptedValidator(),
+            config=Config(use_skills=True),
+        )
+
+    error = raised.value
+    assert isinstance(error.__cause__, ConnectionError)
+    # a request that made no query, which holds what its calls cost
+    assert [(a.query, a.validation, a.usage) for a in error.attempts] == [
+        ("", None, Usage(20, 5))
+    ]
+    assert error.usage == Usage(20, 5)
+
+
+async def test_without_the_option_nothing_is_offered_to_read():
+    llm = FakeLLM([reply("a")])
+
+    result = await run_workflow(
+        "Q", FULL, llm=llm, validate=ScriptedValidator(VALID), config=Config()
+    )
+
+    assert llm.calls[0].tools == ()
+    assert result.attempts[0].skills == ()
+
+
+async def test_a_reply_with_no_text_is_asked_again_as_it_was_and_costs_no_correction():
+    llm = FakeLLM([Completion("", Usage(8, 0)), Completion(reply("a"), Usage(10, 4))])
+    validate = ScriptedValidator(VALID)
+
+    result = await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=validate,
+        config=Config(attempts_w_filtered=0, total_attempts=0),
+    )
+
+    assert result.status == "valid"
+    assert [(a.query, a.empty_reply) for a in result.attempts] == [
+        ("", True),
+        ("a", False),
+    ]
+    assert validate.queries == ["a"]
+    assert result.usage == Usage(18, 4)
+    # the same request: nothing about it changed
+    assert llm.calls[0].system == llm.calls[1].system
+    assert llm.calls[0].messages == llm.calls[1].messages
+
+
+@pytest.mark.parametrize("text", ["", "   ", "\n\t \n"])
+async def test_a_reply_of_nothing_but_space_has_no_text_either(text: str):
+    llm = FakeLLM([text, text])
+    validate = ScriptedValidator()
+
+    result = await run_workflow("Q", FULL, llm=llm, validate=validate, config=Config())
+
+    # twice in a row: the run fails, and it is not a decline
+    assert result.status == "failed"
+    assert result.query == ""
+    assert [a.empty_reply for a in result.attempts] == [True, True]
+    assert validate.queries == []
+    assert len(llm.calls) == 2
+
+
+async def test_a_second_reply_with_no_text_in_a_row_ends_the_run_as_failed_with_the_tokens():
+    llm = FakeLLM([Completion("", Usage(8, 0)), Completion("", Usage(8, 0))])
+
+    result = await run_workflow(
+        "Q", FULL, llm=llm, validate=ScriptedValidator(), config=Config()
+    )
+
+    assert result.status == "failed"
+    assert result.usage == Usage(16, 0)
+    assert all(a.validation is None for a in result.attempts)
+
+
+async def test_an_explicit_empty_block_is_still_a_decline_and_not_an_empty_reply():
+    llm = FakeLLM(["```cypher\n```"])
+
+    result = await run_workflow(
+        "Delete all", FULL, llm=llm, validate=ScriptedValidator(), config=Config()
+    )
+
+    assert result.status == "unanswerable"
+    assert [a.empty_reply for a in result.attempts] == [False]
+
+
+async def test_a_reply_with_no_text_then_a_decline_on_the_filtered_schema_goes_on_to_the_full_one():
+    llm = FakeLLM(["", "```cypher\n```", reply("a")])
+
+    result = await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(VALID),
+        config=Config(),
+        schema_filter=lambda schema, question: FILTERED,
+    )
+
+    assert result.status == "valid"
+    assert [(a.query, a.schema_scope, a.empty_reply) for a in result.attempts] == [
+        ("", "filtered", True),
+        ("", "filtered", False),
+        ("a", "full", False),
+    ]
+    assert [c.system for c in llm.calls] == [
+        generator_system(FILTERED),
+        generator_system(FILTERED),
+        generator_system(FULL),
+    ]
+
+
+async def test_an_empty_reply_to_a_correction_is_asked_again_with_the_same_turns():
+    llm = FakeLLM([reply("a"), "", reply("b")])
+
+    result = await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(invalid("x"), VALID),
+        config=Config(),
+    )
+
+    assert result.status == "valid"
+    assert llm.calls[1].messages == llm.calls[2].messages
+    assert len(llm.calls[1].messages) == 3
+
+
+async def test_one_empty_reply_is_forgiven_each_time_and_not_once_for_the_whole_run():
+    llm = FakeLLM(["", reply("a"), "", reply("b")])
+
+    result = await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(invalid("x"), VALID),
+        config=Config(),
+    )
+
+    assert result.status == "valid"
+    assert [a.empty_reply for a in result.attempts] == [True, False, True, False]

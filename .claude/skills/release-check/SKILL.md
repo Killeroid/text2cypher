@@ -15,3 +15,7 @@ Run these checks in order and report the results:
 8. Read the `version` field from `pyproject.toml` and confirm it matches the intended release version.
 
 If any check fails, fix the issue and rerun that check before continuing. Report a summary: which checks passed, which failed, and the current version. Also check that `CHANGELOG.md` has a dated section for that version.
+
+For a major version, also check that `MIGRATION.md` covers every breaking change that the changelog lists under Changed. The wheel and the sdist must contain the skills and `THIRD_PARTY_NOTICES` (`uv build`, then list them).
+
+The tag is annotated, and its message is `text2cypher X.Y.Z` followed by that version's changelog section, so that users can see what changed in each tag. Pushing the main branch and the tag publishes to PyPI, which cannot be undone: ask the owner first.

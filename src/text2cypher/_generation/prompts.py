@@ -1,5 +1,8 @@
 """The prompts: what the LLM is told to write a query."""
 
+from dataclasses import dataclass
+
+from text2cypher._skills import skills as shipped_skills
 from text2cypher.schema import GraphSchema, render_schema
 
 # The queries the rules and the examples show. tests/generation/test_prompt_rules.py runs each
@@ -100,6 +103,44 @@ _EXAMPLES_RULE = (
     "written (spelling and case)."
 )
 
+_SKILLS_RULE = (
+    "- Skills are short guides to parts of FalkorDB that are easy to get wrong. Read a skill, "
+    "with read_skill, only when the question needs what it covers, before you write the query."
+)
+
+
+@dataclass(frozen=True, slots=True)
+class SkillsOffer:
+    """How the skills are given to the model in a request.
+
+    Attributes:
+        tools: ``True`` to list them and let the model read the ones it needs with
+            ``read_skill``; ``False`` to put every one in the prompt, for a client that
+            cannot be offered tools.
+        read: The ids of the skills the model has already read, which are in the prompt.
+    """
+
+    tools: bool
+    read: tuple[str, ...] = ()
+
+
+def _skills_section(offer: SkillsOffer) -> str:
+    """What the prompt says about the skills: a list to read from, those already read, or all."""
+    guides = shipped_skills()
+    if not offer.tools:
+        everything = "\n\n".join(skill.text for skill in guides.values())
+        return f"Skills (guides to parts of FalkorDB that are easy to get wrong):\n\n{everything}"
+    unread = [skill for skill in guides.values() if skill.id not in offer.read]
+    parts = []
+    if unread:
+        lines = "\n".join(f"- {skill.id}: {skill.description}" for skill in unread)
+        parts.append(f"Skills (read one with read_skill, by its id):\n{lines}")
+    if offer.read:
+        read = "\n\n".join(guides[i].text for i in offer.read if i in guides)
+        parts.append(f"Skills you have already read:\n\n{read}")
+    return "\n\n".join(parts)
+
+
 _FUNCTION_RULE = (
     "- The graph's FalkorDB has user-defined functions, listed under User-defined "
     "functions in the schema and called by that name, as in library.function(x). Call "
@@ -156,16 +197,32 @@ def _has_examples(schema: GraphSchema) -> bool:
     )
 
 
-def generator_system(schema: GraphSchema, *, parameterize: bool = False) -> str:
-    """The system prompt that tells the LLM how to write a query for ``schema``."""
+def generator_system(
+    schema: GraphSchema,
+    *,
+    parameterize: bool = False,
+    skills: SkillsOffer | None = None,
+) -> str:
+    """The system prompt that tells the LLM how to write a query for ``schema``.
+
+    With ``skills``, a section after the rules gives the model the skills, as ``skills``
+    says; without, the prompt has none.
+    """
     kinds = {index.type for index in schema.indexes}
+    unread = (
+        skills is not None
+        and skills.tools
+        and any(skill_id not in skills.read for skill_id in shipped_skills())
+    )
     rules = [
         *_RULES,
         _PARAMETER_RULE if parameterize else _INLINE_VALUES_RULE,
         *(rule for kind, rule in _INDEX_RULES.items() if kind in kinds),
         *([_FUNCTION_RULE] if schema.functions else []),
         *([_EXAMPLES_RULE] if _has_examples(schema) else []),
+        *([_SKILLS_RULE] if unread else []),
     ]
+    section = f"\n\n{_skills_section(skills)}" if skills is not None else ""
     text = (
         render_schema(schema)
         or "The graph has no data yet, so there is nothing to query."
@@ -173,6 +230,7 @@ def generator_system(schema: GraphSchema, *, parameterize: bool = False) -> str:
     return (
         f"{_INTRO}\n\nRules:\n"
         + "\n".join(rules)
+        + section
         + f"\n\n{_checks(parameterize)}\n\n{_format_and_examples(parameterize)}"
         f"\nSchema:\n{text}\n"
     )
