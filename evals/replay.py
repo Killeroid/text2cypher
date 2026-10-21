@@ -13,7 +13,7 @@ from redislite.falkordb_client import FalkorDB as EmbeddedFalkorDB
 from evals.dataset import Dataset, Question, Seeded
 from evals.datasets.movies import MOVIES
 from evals.judge import filter_note, judge
-from text2cypher import Completion, Config, Result, Text2Cypher
+from text2cypher import Completion, Config, LLMError, Result, Text2Cypher
 from text2cypher.schema import schema_from_snapshot
 
 # One correction with the filtered schema, so the escalation can happen
@@ -110,7 +110,10 @@ async def replay(
         agent = Text2Cypher(client, ReplayLLM(replies), config=CONFIG)
         try:
             result = await agent.run(question.text, dataset.graph)
-        except NeedReply as need:
+        except LLMError as error:
+            # The library wraps what the client raises; NeedReply is ours, and is the signal
+            if not isinstance(need := error.__cause__, NeedReply):
+                raise
             items.append(
                 Pending(
                     question.id,

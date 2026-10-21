@@ -1,8 +1,10 @@
 """What came of one question: the result, its attempts and what a query returned."""
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
+from text2cypher._errors import Text2CypherError
 from text2cypher._validation import ValidationResult
 from text2cypher.llm import Usage
 
@@ -15,7 +17,8 @@ class Attempt:
     """One query the LLM wrote, how it was validated, and what writing it cost.
 
     ``validation`` is ``None`` when the query is empty (the LLM declined), which is
-    not validated.
+    not validated, and on the last attempt of an ``LLMError`` or ``DatabaseError``
+    when the database failed while the query was being validated.
 
     Attributes:
         query: The query, empty if the LLM declined.
@@ -35,6 +38,16 @@ class Attempt:
     usage: Usage | None
     execution_error: str | None = None
     auto_fixed: bool = False
+
+
+def total_usage(attempts: Iterable[Attempt]) -> Usage | None:
+    """The tokens of ``attempts``, or ``None`` if any of them did not report them."""
+    total = Usage(0, 0)
+    for attempt in attempts:
+        if attempt.usage is None:
+            return None
+        total += attempt.usage
+    return total
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,9 +106,67 @@ class Result:
     @property
     def usage(self) -> Usage | None:
         """The tokens of all attempts, or ``None`` if any attempt did not report them."""
-        total = Usage(0, 0)
-        for attempt in self.attempts:
-            if attempt.usage is None:
-                return None
-            total += attempt.usage
-        return total
+        return total_usage(self.attempts)
+
+
+class RunInterrupted(Text2CypherError):
+    """A run that stopped in the middle, with what had been done and paid for.
+
+    The LLM calls before the failure were paid for, so they are kept here as they would be
+    on a ``Result``. The error that stopped the run is ``__cause__``.
+
+    Attributes:
+        question: The question that was asked.
+        attempts: The attempts that were made before the failure, in order. For a
+            ``DatabaseError`` the last one is the query that was being validated, with no
+            validation.
+        usage: The tokens of those attempts, or ``None`` if any did not report them. The
+            call that failed is not counted: nothing says what it cost.
+    """
+
+    what = "The run stopped"
+
+    def __init__(
+        self, question: str, attempts: Iterable[Attempt], message: str
+    ) -> None:
+        super().__init__(message)
+        self.question = question
+        self.attempts = tuple(attempts)
+        self.usage = total_usage(self.attempts)
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return type(self), (self.question, self.attempts, str(self))
+
+    @classmethod
+    def after(
+        cls, question: str, attempts: Iterable[Attempt], cause: BaseException
+    ) -> Self:
+        """The error for ``cause`` after ``attempts``; raise it ``from`` the cause."""
+        attempts = tuple(attempts)
+        return cls(
+            question,
+            attempts,
+            f"{cls.what} after {len(attempts)} attempt(s) at {question!r}: {cause}",
+        )
+
+
+class LLMError(RunInterrupted):
+    """The LLM client raised while a question was being answered.
+
+    Any exception the client raises (a rate limit, a lost connection, a bad key) ends the
+    run with this one, so the attempts and the tokens before it are not lost. Cancelling
+    the task is not an error and passes through unchanged.
+    """
+
+    what = "The LLM failed"
+
+
+class DatabaseError(RunInterrupted):
+    """FalkorDB failed while a query the LLM wrote was being validated.
+
+    A connection that is lost or a server that fails (``redis.exceptions.RedisError``)
+    ends the run with this one. A query that FalkorDB rejects when it is run is not one:
+    that is corrected, or recorded as ``execution_error``.
+    """
+
+    what = "The database failed"

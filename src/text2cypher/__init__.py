@@ -8,9 +8,15 @@ change without notice.
 from importlib.metadata import PackageNotFoundError, version
 
 from text2cypher._config import Config
-from text2cypher._errors import GraphNotFoundError
+from text2cypher._errors import GraphNotFoundError, Text2CypherError
 from text2cypher._pipeline import Text2Cypher
-from text2cypher._results import Attempt, Records, Result
+from text2cypher._results import (
+    Attempt,
+    DatabaseError,
+    LLMError,
+    Records,
+    Result,
+)
 from text2cypher._validation import Issue, ValidationResult
 from text2cypher.llm import (
     AsyncChatClient,
@@ -34,16 +40,19 @@ __all__ = [
     "Attempt",
     "Completion",
     "Config",
+    "DatabaseError",
     "FakeLLM",
     "GraphNotFoundError",
     "GraphSchema",
     "Issue",
+    "LLMError",
     "Message",
     "OpenAIClient",
     "Records",
     "Result",
     "SchemaFilter",
     "Text2Cypher",
+    "Text2CypherError",
     "Usage",
     "ValidationResult",
     "__version__",

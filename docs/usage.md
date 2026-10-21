@@ -108,8 +108,25 @@ If the query runs past the timeout, or FalkorDB cannot be reached, the message i
 
 ## Errors
 
-* {py:class}`~text2cypher.GraphNotFoundError` (a `ValueError`): the graph does not exist, or has no labelled nodes or relationships. Raised by `run` before any LLM call, so a typo in the graph name costs nothing.
-* Errors from your LLM client, and from the database while reading the schema or validating, are not caught: they reach you as they are.
+Every error the library raises itself is a {py:class}`~text2cypher.Text2CypherError`, so one `except` catches them all.
+
+* {py:class}`~text2cypher.GraphNotFoundError` (also a `ValueError`): the graph does not exist, or has no labelled nodes or relationships. Raised by `run` before any LLM call, so a typo in the graph name costs nothing.
+* {py:class}`~text2cypher.LLMError`: your LLM client raised while a question was being answered (a rate limit, a lost connection, a bad key; any exception it raises). The attempts made before it were paid for, so they are kept on the error: `error.attempts` (each with its validation, as on a result), `error.usage` (their tokens, or `None` if a client did not report them; the call that failed is not counted, because nothing says what it cost) and `error.question`. The exception your client raised is `error.__cause__`. Cancelling the task is not an error and passes through.
+* {py:class}`~text2cypher.DatabaseError`: FalkorDB failed (a lost connection, a failing server) while a query was being validated. The same fields; the last attempt is the query that was being validated, with `validation=None`, because it was written and paid for.
+
+```python
+from text2cypher import LLMError
+
+try:
+    result = await agent.run("Who acted in Heat?", graph="movies")
+except LLMError as error:
+    print(f"The model failed after {len(error.attempts)} attempts: {error.__cause__!r}")
+    print(error.usage)  # what the earlier attempts cost
+```
+
+A catch of your provider's own exception (for example the OpenAI `RateLimitError`) around `run` now sees an `LLMError` instead, with that exception as `__cause__`.
+
+* Errors from the database while reading the schema, before any LLM call, are not caught: they reach you as they are.
 * A timeout or a lost connection while executing is recorded in `result.execution_error`, as above; an error from FalkorDB about the query is corrected, as above.
 
 ## Try it without a server or a model

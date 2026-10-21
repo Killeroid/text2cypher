@@ -23,14 +23,15 @@ class Call(NamedTuple):
 class FakeLLM:
     """Answers with the given replies in order, and records every call.
 
-    A reply is a ``Completion``, or a plain string for one without usage. It has both
+    A reply is a ``Completion``, or a plain string for one without usage, or an exception,
+    which is raised at that call (to test what happens when the model fails). It has both
     ``chat`` and ``complete``; the library calls ``chat``.
 
     Attributes:
         calls: What it was asked, in order.
     """
 
-    def __init__(self, replies: Iterable[str | Completion]) -> None:
+    def __init__(self, replies: Iterable[str | Completion | Exception]) -> None:
         self._replies = iter(replies)
         self.calls: list[Call] = []
 
@@ -51,4 +52,6 @@ class FakeLLM:
             raise RuntimeError(
                 f"FakeLLM has no reply left for call {len(self.calls)}"
             ) from None
+        if isinstance(reply, Exception):
+            raise reply
         return reply if isinstance(reply, Completion) else Completion(reply, None)

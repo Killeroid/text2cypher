@@ -75,7 +75,7 @@ src/text2cypher/
 ├── _config.py           Config
 ├── _results.py          Result, Attempt, Records, Status, SchemaScope
 ├── _execution.py        execute_cypher: read-only, with a timeout
-├── _errors.py           GraphNotFoundError
+├── _errors.py           Text2CypherError, GraphNotFoundError (LLMError and DatabaseError are in _results.py, with the attempts they carry)
 ├── llm/                 public: AsyncLLMClient, Completion, Usage, OpenAIClient, FakeLLM, Call
 │   ├── _base.py  _openai.py  _fake.py
 ├── schema/              public: GraphSchema, Path, SchemaFilter, filter_schema, render_schema, schema_from_snapshot
@@ -320,6 +320,21 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   `total_attempts=0`. The fixed query is the one that is executed, if execution is on.
 - Off by default because a fix can make a query valid and still not what the question meant (a typo of `Person` that was
   meant to be `Persona`, or a property of the wrong label that happens to be right on another).
+
+### Errors
+
+- One base, `Text2CypherError`; `GraphNotFoundError(Text2CypherError, ValueError)` keeps its old base. The two errors of a run that stops in
+  the middle are `LLMError` and `DatabaseError`, subclasses of a private `RunInterrupted` that holds `question`, `attempts` and `usage`
+  (computed by the `total_usage` helper that `Result.usage` also uses, so they cannot disagree). They live in `_results.py` and not in
+  `_errors.py` because they carry `Attempt`, and `_errors` is the bottom layer.
+- Why: the LLM calls are paid for, and an exception that lost them did so silently. Execution already kept them (`execution_error`); this does the same for
+  the other two things that can fail in the loop. The failed call's own cost is unknown, so it is not counted, and the docs say so.
+- `LLMError` wraps any `Exception` the client raises (provider errors are arbitrary), with the original as `__cause__`; `CancelledError` is a
+  `BaseException` and passes through. This changes what a caller sees: code that caught the provider's exception must read `__cause__`, so it is in the changelog under
+  Changed. `DatabaseError` wraps only `redis.exceptions.RedisError` from validation (a programming error is a bug and propagates), and the query that
+  was being validated is kept as an attempt without a validation. The schema read, before any LLM call, loses nothing and is not wrapped.
+- `RunInterrupted` defines `__reduce__`, so the errors survive a pickle (a process pool, a task queue) with their attempts; `__cause__` does not, as for any exception.
+- `FakeLLM` raises a reply that is an exception, so this can be tested.
 
 ### Execution (`_execution.py`)
 

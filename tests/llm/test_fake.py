@@ -37,3 +37,14 @@ async def test_fake_llm_records_the_turns_it_was_given_and_the_last_is_the_user_
     assert llm.calls[0].user == "fix"
     assert llm.calls[0].messages == tuple(turns)
     assert llm.calls[1].messages == (Message("user", "one"),)
+
+
+async def test_fake_llm_raises_a_reply_that_is_an_exception_at_that_call():
+    llm = FakeLLM(["first", ConnectionError("down"), "third"])
+
+    assert (await llm.complete("s", "u")).text == "first"
+    with pytest.raises(ConnectionError, match="down"):
+        await llm.complete("s", "u")
+    assert (await llm.complete("s", "u")).text == "third"
+    # the call that raised is recorded like the others
+    assert len(llm.calls) == 3

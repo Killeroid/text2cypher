@@ -6,6 +6,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Added
 
+- `Text2CypherError`, the base of the errors the library raises, and two new ones for a run that stops in the middle: `LLMError` (the LLM client raised) and `DatabaseError` (FalkorDB failed while a query was being
+  validated). Both carry `question`, `attempts` and `usage` of the attempts made before the failure, which were paid for and used to be lost, and the original exception as `__cause__`. `FakeLLM` raises a reply that is an exception.
 - `Config(autofix_typos=True)` (off by default): a label, relationship type or property that the validators report as unknown is replaced, without the LLM, by the one name of the graph it is a likely typo of
   (never inside a string or a comment), and the query is validated again, up to three times. If it passes it is the answer, at no cost in LLM calls or corrections; if not, it is dropped and the LLM corrects
   the query it wrote. `Attempt.auto_fixed` marks the fixed attempt, which has `Usage(0, 0)`.
@@ -17,6 +19,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Changed
 
+- An exception raised by your LLM client during `run` now reaches you as an `LLMError`, with the original as `__cause__`, and a failure of FalkorDB while validating as a `DatabaseError`. Code that catches a provider's own
+  exception (for example `openai.RateLimitError`) around `run` has to catch `LLMError` and look at `__cause__`. `GraphNotFoundError` is unchanged, and is still a `ValueError`.
 - The default limits are higher: `attempts_w_filtered=5` (was 3) and `total_attempts=10` (was 5). A question that cannot be fixed now costs up to 11 LLM calls (was 6) before it ends as `failed`.
   Pass `Config(attempts_w_filtered=3, total_attempts=5)` for the old limits.
 - With `Config(execute=True)`, a query that FalkorDB rejects or fails when it runs (a type error on a value, a division by zero) is no longer returned as `valid` with `execution_error`: the error is sent

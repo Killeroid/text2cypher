@@ -3,10 +3,18 @@
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
 
+from redis.exceptions import RedisError
+
 from text2cypher._config import Config
 from text2cypher._execution import Execution
 from text2cypher._generation import Generation, Round, fix_typos, generate_cypher
-from text2cypher._results import Attempt, Result, SchemaScope
+from text2cypher._results import (
+    Attempt,
+    DatabaseError,
+    LLMError,
+    Result,
+    SchemaScope,
+)
 from text2cypher._validation import ValidationResult
 from text2cypher.llm import AsyncChatClient, AsyncLLMClient, Usage
 from text2cypher.schema import GraphSchema, SchemaFilter
@@ -40,6 +48,9 @@ async def run_workflow(
     Each correction is a request that carries every query written so far with what was
     wrong with it, so the LLM does not repeat a mistake it was told about.
 
+    An exception from the LLM ends the run with an ``LLMError``, and one from FalkorDB while
+    validating with a ``DatabaseError``; both keep the attempts and the tokens so far.
+
     With ``execute``, a query that passed validation is run. If FalkorDB rejects or fails
     it, that is what the next correction is told, and it costs a correction like any
     other; when the corrections run out the result is ``failed``. A timeout or a lost
@@ -61,9 +72,12 @@ async def run_workflow(
             schema, filtered, config, corrections=corrections, escalated=escalated
         )
         rounds = _with_schema_note(rounds, attempts, scope)
-        generation = await generate_cypher(
-            llm, used, question, rounds, parameterize=config.use_parameters
-        )
+        try:
+            generation = await generate_cypher(
+                llm, used, question, rounds, parameterize=config.use_parameters
+            )
+        except Exception as error:
+            raise LLMError.after(question, attempts, error) from error
         if not generation.query:
             attempts.append(Attempt("", None, scope, generation.usage))
             if scope == "full":
@@ -71,9 +85,16 @@ async def run_workflow(
             escalated = True
             continue
 
-        checked, validation = await _check(
-            generation, scope, validate, schema, autofix=config.autofix_typos
-        )
+        try:
+            checked, validation = await _check(
+                generation, scope, validate, schema, autofix=config.autofix_typos
+            )
+        except RedisError as error:
+            # The query was written and paid for: it is kept, with no validation
+            unchecked = Attempt(generation.query, None, scope, generation.usage)
+            raise DatabaseError.after(
+                question, [*attempts, unchecked], error
+            ) from error
         query = checked[-1].query
         ran = Execution()
         if validation.valid and execute is not None:

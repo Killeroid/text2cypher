@@ -8,7 +8,11 @@ The public API is what `text2cypher`, `text2cypher.llm` and `text2cypher.schema`
 .. autoclass:: text2cypher.Text2Cypher
    :members:
 .. autoclass:: text2cypher.Config
+.. autoexception:: text2cypher.Text2CypherError
 .. autoexception:: text2cypher.GraphNotFoundError
+.. autoexception:: text2cypher.LLMError
+   :members:
+.. autoexception:: text2cypher.DatabaseError
 ```
 
 ## The result
