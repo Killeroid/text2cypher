@@ -213,7 +213,7 @@ async def test_a_lost_connection_during_execution_does_not_lose_the_result(
     async def connection_lost(*args: object, **kwargs: object):
         raise RedisConnectionError("connection lost")
 
-    monkeypatch.setattr("text2cypher._execution.execute_cypher", connection_lost)
+    monkeypatch.setattr("text2cypher._graph.execution.execute_cypher", connection_lost)
     llm = FakeLLM([reply("MATCH (p:Person) RETURN p.name")])
 
     result = await Text2Cypher(falkordb_client, llm, config=Config(execute=True)).run(
@@ -234,7 +234,7 @@ async def test_a_programming_error_during_execution_is_not_swallowed(
     async def broken(*args: object, **kwargs: object):
         raise TypeError("a bug")
 
-    monkeypatch.setattr("text2cypher._execution.execute_cypher", broken)
+    monkeypatch.setattr("text2cypher._graph.execution.execute_cypher", broken)
     llm = FakeLLM([reply("MATCH (p:Person) RETURN p.name")])
 
     with pytest.raises(TypeError, match="a bug"):

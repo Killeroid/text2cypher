@@ -35,9 +35,9 @@ The public API is what `text2cypher`, `text2cypher.llm`, `text2cypher.schema` an
    :members:
 .. autodata:: text2cypher._validation.issues.Source
    :no-value:
-.. autodata:: text2cypher._results.Status
+.. autodata:: text2cypher._results.results.Status
    :no-value:
-.. autodata:: text2cypher._results.SchemaScope
+.. autodata:: text2cypher._results.results.SchemaScope
    :no-value:
 ```
 

@@ -16,7 +16,6 @@ from support import (
 )
 
 from text2cypher._config import Config
-from text2cypher._execution import Execution
 from text2cypher._generation import FilterResult, Round, generate_cypher
 from text2cypher._generation.conversation import SCHEMA_NOTE, chat_messages
 from text2cypher._generation.prompts import (
@@ -25,6 +24,7 @@ from text2cypher._generation.prompts import (
     generator_user,
 )
 from text2cypher._generation.read_skill import READ_SKILL
+from text2cypher._graph.execution import Execution
 from text2cypher._workflow import run_workflow
 from text2cypher.llm import Completion, FakeLLM, ToolCall, Usage
 from text2cypher.schema import GraphSchema

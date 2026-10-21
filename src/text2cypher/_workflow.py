@@ -6,7 +6,6 @@ from dataclasses import replace
 from redis.exceptions import RedisError
 
 from text2cypher._config import Config
-from text2cypher._execution import Execution
 from text2cypher._generation import (
     AsyncSchemaFilter,
     Generation,
@@ -17,6 +16,7 @@ from text2cypher._generation import (
     generate_cypher,
     repair_header,
 )
+from text2cypher._graph import Execution
 from text2cypher._results import (
     NO_TOKENS,
     Attempt,

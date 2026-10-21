@@ -6,10 +6,9 @@ from falkordb.asyncio import FalkorDB
 from openai import AsyncOpenAI
 
 from text2cypher._config import Config
-from text2cypher._execution import Execution, run_query
 from text2cypher._generation import AsyncSchemaFilter, LLMSchemaFilter
+from text2cypher._graph import Execution, SchemaSource, run_query
 from text2cypher._results import Result
-from text2cypher._schema_source import SchemaSource
 from text2cypher._skills import Skill, catalog, check_inline, skills
 from text2cypher._validation import QueryValidator
 from text2cypher._workflow import run_workflow

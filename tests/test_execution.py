@@ -3,7 +3,7 @@ from falkordb.asyncio import FalkorDB
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import ResponseError
 
-from text2cypher._execution import Execution, execute_cypher, run_query
+from text2cypher._graph.execution import Execution, execute_cypher, run_query
 from text2cypher._results import Records
 
 pytestmark = pytest.mark.anyio
@@ -103,7 +103,7 @@ async def test_run_query_says_a_lost_connection_cannot_be_corrected(
     async def connection_lost(*args: object, **kwargs: object):
         raise RedisConnectionError("connection lost")
 
-    monkeypatch.setattr("text2cypher._execution.execute_cypher", connection_lost)
+    monkeypatch.setattr("text2cypher._graph.execution.execute_cypher", connection_lost)
 
     execution = await run_query(falkordb_client.select_graph(movies_graph), "RETURN 1")
 

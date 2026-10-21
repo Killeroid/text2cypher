@@ -64,7 +64,7 @@ one call, up to four with skills. Defaults are 5 and 10 (ADR-046).
 Public API: what `text2cypher`, `text2cypher.llm`, `text2cypher.schema` and `text2cypher.skills` list in `__all__`, pinned by
 `tests/test_public_api.py`, which also fails if a module outside them lacks a leading underscore. Everything
 else is internal. Dependencies point down, and `import-linter` enforces it in CI: (`_pipeline`, `skills`) -> `_workflow` ->
-(`_generation`, `_execution`, `_schema_source`) -> `_examples` -> `_results` -> `_validation` -> (`llm`, `schema`, `_config`, `_errors`, `_skills`),
+(`_generation`, `_graph`) -> `_results` -> `_validation` -> (`llm`, `schema`, `_config`, `_errors`, `_skills`),
 and the package never imports `evals`. Each type lives with its domain (there is no shared `types` module).
 
 ```
@@ -72,16 +72,18 @@ src/text2cypher/
 ├── __init__.py          the public API (re-exports, __all__, __version__); no logic
 ├── py.typed
 ├── _pipeline.py         Text2Cypher: gets the schema, runs the workflow (which validates and executes), clear_schema
-├── _schema_source.py    SchemaSource: the schema and snapshot, new per read or kept per graph (and the missing-graph error)
-├── _examples.py         sample_examples: a few example values of each plain property, read-only, with a timeout
 ├── _workflow.py         run_workflow: the loop and the escalation policy
 ├── _config.py           Config
-├── _values.py           GraphNode, GraphRelationship, GraphPath, to_python: what a query returns, without the client
-├── _results.py          Result, Attempt, Records, Status, SchemaScope, total_usage, and the run errors LLMError and DatabaseError
-├── _execution.py        execute_cypher (read-only, with a timeout), run_query and Execution (an error as a value)
+├── _graph/              talking to FalkorDB (ADR-053)
+│   ├── schema_source.py SchemaSource: the schema and snapshot, new per read or kept per graph (and the missing-graph error)
+│   ├── examples.py      sample_examples: a few example values of each plain property, read-only, with a timeout
+│   └── execution.py     execute_cypher (read-only, with a timeout), run_query and Execution (an error as a value)
+├── _results/            what comes back; __init__ re-exports everything, so `text2cypher._results` is still the path
+│   ├── results.py       Result, Attempt, Records, Status, SchemaScope, total_usage, and the run errors LLMError and DatabaseError
+│   └── values.py        GraphNode, GraphRelationship, GraphPath, to_python: what a query returns, without the client
 ├── skills.py            public: Skill, builtin_skills, load_skills (the names of _skills, for the skills= argument)
 ├── _skills/             Skill, skills(), load, catalog, check_inline: guides to parts of FalkorDB's Cypher, one folder each (SKILL.md)
-├── _errors.py           Text2CypherError, GraphNotFoundError (LLMError and DatabaseError are in _results.py, with the attempts they carry)
+├── _errors.py           Text2CypherError, GraphNotFoundError (LLMError and DatabaseError are in _results/results.py, with the attempts they carry)
 ├── llm/                 public: AsyncChatClient, AsyncLLMClient, Completion, Message, Tool, ToolCall, Usage, OpenAIClient, FakeLLM, Call
 │   ├── _base.py  _openai.py  _fake.py  _adapt.py (as_client: the SDK's own client)
 ├── schema/              public: GraphSchema, Index, Path, SchemaFilter, filter_schema, restrict_schema, render_schema, schema_from_snapshot
@@ -145,7 +147,7 @@ its execution error and the skills it read), the number of corrections, whether 
   budget on it.
 - `Config` rejects negative values and `total_attempts < attempts_w_filtered`.
 
-### Results (`_results.py`)
+### Results (`_results/`)
 
 `Result` has `status`, the last `query`, every `Attempt`, `usage`, `records`, `execution_error` and `filter_usage`. An `Attempt` has the query (empty for a decline or an empty reply), its `ValidationResult` (`None` for no query, and
 for a query the database failed to validate), the schema scope, `Usage`, `execution_error`, and the flags `auto_fixed`, `empty_reply` and `skills` (the ids read) and `finish_reason` (why the reply ended). `Result.usage` is the sum of the attempts' usage and
@@ -215,7 +217,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   `relationship_examples` map entity then property to values already written as in a query (`'Alien'`, `1999`,
   `true`; a string is cut at 40 characters, with an escaped quote), and `render_schema` prints them after the type,
   `title: STRING (e.g. 'Alien', 'Heat')`. When any exist the prompt gets one rule: "Where the schema shows example
-  values, write a value the way the examples are written (spelling and case)". They are read by `_examples.py`: one
+  values, write a value the way the examples are written (spelling and case)". They are read by `_graph/examples.py`: one
   read-only query per property of a plain type (String, Integer, Float, Boolean; not a list, map, point or vector)
   that returns the first 20 non-null values and stops (a `DISTINCT` would read every row), of which the first
   three distinct are kept. At most 8 run at once, each with a 2 second timeout, and a query that fails or times out
@@ -371,7 +373,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 
 - One base, `Text2CypherError`; `GraphNotFoundError(Text2CypherError, ValueError)` keeps its old base. The two errors of a run that stops in
   the middle are `LLMError` and `DatabaseError`, subclasses of a private `RunInterrupted` that holds `question`, `attempts` and `usage`
-  (computed by the `total_usage` helper that `Result.usage` also uses, so they cannot disagree). They live in `_results.py` and not in
+  (computed by the `total_usage` helper that `Result.usage` also uses, so they cannot disagree). They live in `_results/results.py` and not in
   `_errors.py` because they carry `Attempt`, and `_errors` is the bottom layer.
 - Why: the LLM calls are paid for, and an exception that lost them did so silently. Execution already kept them (`execution_error`); this does the same for
   the other two things that can fail in the loop. The failed call's own cost is unknown, so it is not counted, and the docs say so.
@@ -411,7 +413,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   kept (the declined request is asked again, and reads again).
 - `supports_tools(llm)` decides: a client that can be offered tools lists and reads; any other (`chat` without tools, or `complete` only) has every skill in the prompt, about 2,000 tokens a request and no extra call.
 
-### Execution (`_execution.py`)
+### Execution (`_graph/execution.py`)
 
 - Off by default (`Config.execute = False`).
 - `execute_cypher(graph, query, *, timeout_ms=None) -> Records` runs `ro_query` with a timeout: 10 s by default
@@ -421,7 +423,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   `run_query(graph, query, *, timeout_ms)` returns an `Execution(records, error, correctable)`: any
   `redis.exceptions.RedisError` becomes an `error` string and anything else is a bug and propagates.
   `Result.records` is `Records(columns, rows)`, with the client's own values (`Node`, `Edge`, `Path`). `Records.as_python()` (ADR-052) gives the same rows with them as
-  `GraphNode`, `GraphRelationship` and `GraphPath` (`_values.py`): frozen, read-only properties (`MappingProxyType`), equal and hashed by id, picklable (`__reduce__`, since a mapping proxy is not), converted inside lists, tuples and
+  `GraphNode`, `GraphRelationship` and `GraphPath` (`_results/values.py`): frozen, read-only properties (`MappingProxyType`), equal and hashed by id, picklable (`__reduce__`, since a mapping proxy is not), converted inside lists, tuples and
   maps (a map comes back as a `dict`), idempotent. `rows` stays raw, so nothing changed for anyone and the conversion costs nothing unless asked for. No ORM is imported; a user builds entities from `labels` and `properties`.
 - `correctable` is true for a `ResponseError` that is not a timeout (FalkorDB rejected or failed this query: a type
   error on a value, a division by zero, a bad argument). Checked on FalkorDB with queries that pass both validators

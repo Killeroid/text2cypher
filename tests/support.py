@@ -8,7 +8,7 @@ from cypher_guardrail import issues as cg
 from openai import AsyncOpenAI
 
 from text2cypher import GraphSchema, Issue, Records, ValidationResult
-from text2cypher._execution import Execution
+from text2cypher._graph.execution import Execution
 from text2cypher.schema import Path
 
 # A small schema, built by hand: (:Person {name})-[:ACTED_IN]->(:Movie {title})

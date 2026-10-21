@@ -5,8 +5,8 @@ from falkordb.asyncio import FalkorDB
 from falkordb.asyncio.graph import AsyncGraph
 from redis.exceptions import ResponseError
 
-from text2cypher._examples import _first_values, _literal, sample_examples
-from text2cypher._schema_source import SchemaSource
+from text2cypher._graph.examples import _first_values, _literal, sample_examples
+from text2cypher._graph.schema_source import SchemaSource
 from text2cypher.schema import GraphSchema
 
 pytestmark = pytest.mark.anyio

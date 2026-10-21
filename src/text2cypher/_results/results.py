@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from typing import Any, Literal, Self
 
 from text2cypher._errors import Text2CypherError
+from text2cypher._results.values import to_python
 from text2cypher._validation import ValidationResult
-from text2cypher._values import to_python
 from text2cypher.llm import Usage
 
 type SchemaScope = Literal["filtered", "full"]

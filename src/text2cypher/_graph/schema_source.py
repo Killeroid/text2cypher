@@ -8,7 +8,7 @@ from cypher_guardrail import AsyncLiveSnapshot, Snapshot, SnapshotSource
 from falkordb.asyncio import FalkorDB
 
 from text2cypher._errors import GraphNotFoundError
-from text2cypher._examples import Examples, sample_examples
+from text2cypher._graph.examples import Examples, sample_examples
 from text2cypher.schema import GraphSchema, schema_from_snapshot
 
 # A live snapshot refreshes itself in the background after this long; ours is refreshed by

@@ -12,6 +12,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ### Changed
 
 - `cypher-guardrail` is now `>=1.5.1` (was `>=1.4.0`).
+- Internal: the private modules `_execution`, `_examples` and `_schema_source` moved into `text2cypher._graph`, and `_values` and `_results` into `text2cypher._results`, to leave fewer files at the root. The public API is unchanged, and `text2cypher._results` still exports what it did. Code that imported the other private modules directly has to change the path.
 
 ## 2.0.0 - 2026-10-21
 

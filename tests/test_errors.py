@@ -192,3 +192,30 @@ async def test_a_run_on_a_real_graph_that_loses_the_llm_keeps_the_first_attempt(
     assert not error.attempts[0].validation.valid
     assert error.usage == Usage(7, 3)
     assert isinstance(error.__cause__, RateLimited)
+
+
+def test_a_result_pickled_with_the_old_module_paths_still_loads(monkeypatch):
+    """The classes moved into ``_results/``; the old path ``text2cypher._results`` still
+    finds each of them, so a pickle written before the move can be read."""
+    import pickle
+
+    import text2cypher
+    from text2cypher import _results
+
+    classes = [
+        text2cypher.Result,
+        text2cypher.Attempt,
+        text2cypher.Records,
+        text2cypher.LLMError,
+        text2cypher.DatabaseError,
+    ]
+    for cls in classes:
+        assert getattr(_results, cls.__name__) is cls
+        monkeypatch.setattr(cls, "__module__", "text2cypher._results", raising=False)
+
+    attempt = text2cypher.Attempt("MATCH (n) RETURN n", None, "full", None)
+    records = text2cypher.Records(("n",), ((1,),))
+    result = text2cypher.Result("q", "valid", (attempt,), records)
+
+    for value in (attempt, records, result):
+        assert pickle.loads(pickle.dumps(value)) == value
