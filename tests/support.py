@@ -143,3 +143,19 @@ def chat_reply(content: str | None, usage: dict | None) -> dict:
     if usage is not None:
         reply["usage"] = usage
     return reply
+
+
+def tool_calls_reply(
+    calls: list[tuple[str, str, str]],
+    usage: dict | None = None,
+    *,
+    kind: str = "function",
+) -> dict:
+    """A chat reply in which the model asks for tools: ``(id, name, arguments as JSON)`` each."""
+    reply = chat_reply(None, usage)
+    reply["choices"][0]["finish_reason"] = "tool_calls"
+    reply["choices"][0]["message"]["tool_calls"] = [
+        {"id": id_, "type": kind, "function": {"name": name, "arguments": arguments}}
+        for id_, name, arguments in calls
+    ]
+    return reply

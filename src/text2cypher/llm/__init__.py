@@ -3,6 +3,8 @@ from text2cypher.llm._base import (
     AsyncLLMClient,
     Completion,
     Message,
+    Tool,
+    ToolCall,
     Usage,
 )
 from text2cypher.llm._fake import Call, FakeLLM
@@ -16,5 +18,7 @@ __all__ = [
     "FakeLLM",
     "Message",
     "OpenAIClient",
+    "Tool",
+    "ToolCall",
     "Usage",
 ]

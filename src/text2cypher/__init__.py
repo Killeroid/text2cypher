@@ -26,6 +26,8 @@ from text2cypher.llm import (
     FakeLLM,
     Message,
     OpenAIClient,
+    Tool,
+    ToolCall,
     Usage,
 )
 from text2cypher.schema import GraphSchema, SchemaFilter, filter_schema
@@ -57,6 +59,8 @@ __all__ = [
     "SchemaFilter",
     "Text2Cypher",
     "Text2CypherError",
+    "Tool",
+    "ToolCall",
     "Usage",
     "ValidationResult",
     "__version__",

@@ -29,6 +29,8 @@ PUBLIC = {
         "SchemaFilter",
         "Text2Cypher",
         "Text2CypherError",
+        "Tool",
+        "ToolCall",
         "Usage",
         "ValidationResult",
         "__version__",
@@ -42,6 +44,8 @@ PUBLIC = {
         "FakeLLM",
         "Message",
         "OpenAIClient",
+        "Tool",
+        "ToolCall",
         "Usage",
     },
     "text2cypher.schema": {
@@ -72,6 +76,8 @@ def test_the_public_names_of_the_subpackages_are_the_same_objects_as_the_top_lev
         "FakeLLM",
         "Message",
         "OpenAIClient",
+        "Tool",
+        "ToolCall",
         "Usage",
     ):
         assert getattr(text2cypher, name) is getattr(llm, name)

@@ -1,12 +1,18 @@
 """An LLM client for OpenAI's Chat Completions API (and compatible servers)."""
 
 import copy
+import json
 from collections.abc import Sequence
+from typing import Any, Literal
 
 from openai import NOT_GIVEN, AsyncOpenAI, omit
-from openai.types.chat import ChatCompletionMessageParam
+from openai.types.chat import (
+    ChatCompletionMessage,
+    ChatCompletionMessageParam,
+    ChatCompletionToolParam,
+)
 
-from text2cypher.llm._base import Completion, Message, Usage
+from text2cypher.llm._base import Completion, Message, Tool, ToolCall, Usage
 
 
 class OpenAIClient:
@@ -32,6 +38,8 @@ class OpenAIClient:
             connection error, a rate limit or a server error, with a pause between. ``None``
             leaves the client's own setting (2 for one made here). When it still fails, the
             run ends with an ``LLMError``.
+        tools: ``False`` says the model or server cannot be offered tools (some compatible
+            servers cannot), so the library does without them.
     """
 
     def __init__(
@@ -43,7 +51,9 @@ class OpenAIClient:
         system_role: bool = True,
         timeout: float | None = 120.0,
         max_retries: int | None = None,
+        tools: bool = True,
     ) -> None:
+        self.supports_tools = tools
         self._model = model
         # The copy shares the connection pool of the client it is made from
         self._client = (client or AsyncOpenAI()).with_options(
@@ -64,19 +74,37 @@ class OpenAIClient:
         """Ask the model with one user message; see ``chat``."""
         return await self.chat(system, [Message("user", user)])
 
-    async def chat(self, system: str, messages: Sequence[Message]) -> Completion:
-        """Ask the model, and return its reply and, when the API reports it, the tokens used."""
+    async def chat(
+        self,
+        system: str,
+        messages: Sequence[Message],
+        tools: Sequence[Tool] | None = None,
+        *,
+        tool_choice: Literal["auto", "none"] = "auto",
+    ) -> Completion:
+        """Ask the model, and return its reply, the tool calls it made, and when the API
+        reports it, the tokens used.
+
+        ``tools`` are offered as functions. A call whose arguments are not valid JSON has
+        empty arguments, so that the answer can say what is missing and the model can try
+        again; calls of any kind other than a function are ignored.
+        """
+        offered: Any = [_tool_param(tool) for tool in tools or ()] or omit
         response = await self._client.chat.completions.create(
             model=self._model,
             messages=self._messages(system, messages),
             temperature=self._temperature,
+            tools=offered,
+            tool_choice=tool_choice if tools else omit,
         )
         used = response.usage
+        message = response.choices[0].message
         return Completion(
-            text=response.choices[0].message.content or "",
+            text=message.content or "",
             usage=None
             if used is None
             else Usage(used.prompt_tokens, used.completion_tokens),
+            tool_calls=_tool_calls(message),
         )
 
     def _messages(
@@ -89,6 +117,55 @@ class OpenAIClient:
 
 
 def _param(turn: Message) -> ChatCompletionMessageParam:
+    if turn.role == "tool":
+        return {
+            "role": "tool",
+            "tool_call_id": turn.tool_call_id or "",
+            "content": turn.content,
+        }
+    if turn.role == "assistant" and turn.tool_calls:
+        return {
+            "role": "assistant",
+            "content": turn.content or None,
+            "tool_calls": [
+                {
+                    "id": call.id,
+                    "type": "function",
+                    "function": {
+                        "name": call.name,
+                        "arguments": json.dumps(call.arguments),
+                    },
+                }
+                for call in turn.tool_calls
+            ],
+        }
     if turn.role == "user":
         return {"role": "user", "content": turn.content}
     return {"role": "assistant", "content": turn.content}
+
+
+def _tool_param(tool: Tool) -> ChatCompletionToolParam:
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": dict(tool.parameters),
+        },
+    }
+
+
+def _tool_calls(message: ChatCompletionMessage) -> tuple[ToolCall, ...]:
+    return tuple(
+        ToolCall(call.id, call.function.name, _arguments(call.function.arguments))
+        for call in message.tool_calls or ()
+        if call.type == "function"
+    )
+
+
+def _arguments(text: str) -> dict[str, Any]:
+    try:
+        arguments = json.loads(text)
+    except ValueError:
+        return {}
+    return arguments if isinstance(arguments, dict) else {}

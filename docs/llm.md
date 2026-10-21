@@ -13,13 +13,22 @@ from text2cypher import Completion, Message, Text2Cypher, Usage
 
 
 class MyClient:
-    async def chat(self, system: str, messages: Sequence[Message]) -> Completion:
+    async def chat(
+        self,
+        system: str,
+        messages: Sequence[Message],
+        tools=None,
+        *,
+        tool_choice="auto",
+    ) -> Completion:
         text, tokens_in, tokens_out = await ask_my_model(system, messages)
         return Completion(text, Usage(input_tokens=tokens_in, output_tokens=tokens_out))
 
 
 agent = Text2Cypher(client, MyClient())
 ```
+
+`tools` and `tool_choice` are for a model that can call functions, and a client that cannot may ignore them: it says so with `supports_tools = False`, and the library then offers it none. A {py:class}`~text2cypher.Tool` is a name, a description and a JSON Schema for its parameters, the shape the OpenAI SDK and MCP use. When a model asks for one, the reply has `tool_calls` ({py:class}`~text2cypher.ToolCall`: an id, a name and the arguments as a dict), and the library answers with a `Message` whose `role` is `"tool"` and whose `tool_call_id` is the call's id, then asks again. `tool_choice="none"` offers the tools but forbids a call, to make the model answer. From 1.x, see [](migration.md).
 
 A client with only `complete(system, user)` still works, and every client written for it before `chat` existed keeps working. It gets the same conversation as one user message: the question, then the earlier attempts, oldest first, each with its problems, and then the instruction to correct them.
 
@@ -64,6 +73,7 @@ llm = OpenAIClient("your-model")
 * `temperature` is `0` by default; `temperature=None` leaves it out, for models that only accept their own.
 * `system_role=False` puts the system text before the text of the first user turn, for a model that has no system role.
 * `timeout` (120 seconds by default) is how long a call waits for a reply before it is given up and retried. The OpenAI SDK waits 10 minutes, and a question can make a dozen calls, so a hung connection could hold a run for hours. Raise it for a model that thinks for longer; `timeout=None` leaves the timeout of the client you pass. It applies to your own `AsyncOpenAI` too.
+* `tools=False` says the model or server cannot be offered tools (some OpenAI-compatible servers cannot), so the library offers none.
 * `max_retries` is how many times the SDK retries a call that fails on a timeout, a connection error, a rate limit or a server error, with a pause between. `None` (the default) leaves the client's own setting, which is 2 for the one made here. When a call still fails, the run ends with an `LLMError` that keeps the attempts made so far (see [](usage.md#errors)).
 * It reads `OPENAI_API_KEY` unless you pass your own `AsyncOpenAI` as `client`, for example for an OpenAI-compatible server:
 

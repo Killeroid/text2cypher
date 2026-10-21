@@ -4,8 +4,18 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## Unreleased
 
+### Changed
+
+- **Breaking, for a client of your own:** `AsyncChatClient.chat` takes the tools a model may be offered: `chat(system, messages, tools=None, *, tool_choice="auto")`. A client with the old two-argument `chat` keeps
+  working at run time, because tools are offered only to a client that takes them (it says so with `supports_tools`, or its `chat` takes `tools` or keyword arguments), but a type checker reports the new signature.
+  `Completion`, `Message` and `Call` have more fields (with defaults), so code that unpacks them into a fixed number of names must read the fields by name. See `MIGRATION.md`.
+
 ### Added
 
+- `Tool` and `ToolCall`, in the shape that the OpenAI SDK, MCP and the other tool-calling APIs share (a name, a description and a JSON Schema; an id, a name and arguments as a dict), `Completion.tool_calls`, and `Message`
+  turns with `tool_calls` and a `"tool"` role carrying `tool_call_id`. `OpenAIClient` sends the tools as functions, answers every call id, and parses the model's calls (`OpenAIClient(tools=False)` for a server that cannot
+  call tools); `FakeLLM` records the tools and the choice on each call and can script a tool call.
+- `MIGRATION.md` (also in the docs): what to change when moving from 1.x.
 - An `openai.AsyncOpenAI` (also `AsyncAzureOpenAI`, and a client for a compatible server) can be passed as the `llm` of `Text2Cypher` with `model=`, without wrapping it in `OpenAIClient`: `Text2Cypher(client, AsyncOpenAI(), model="...")`.
   An SDK client has no model of its own, so `model=` is required for it and is an error with any other client; the synchronous `openai.OpenAI` is refused. `LLMSchemaFilter` takes `model` too: with its own
   SDK client it names the model, and with `llm=None` it asks the main client with another model (a cheaper one), through the new `OpenAIClient.with_model`.

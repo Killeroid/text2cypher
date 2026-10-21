@@ -42,6 +42,8 @@ The public API is what `text2cypher`, `text2cypher.llm` and `text2cypher.schema`
 .. autoclass:: text2cypher.AsyncLLMClient
    :members:
 .. autoclass:: text2cypher.Message
+.. autoclass:: text2cypher.Tool
+.. autoclass:: text2cypher.ToolCall
 .. autoclass:: text2cypher.Completion
 .. autoclass:: text2cypher.Usage
 .. autoclass:: text2cypher.OpenAIClient

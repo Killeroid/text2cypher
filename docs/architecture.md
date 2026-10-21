@@ -242,14 +242,21 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 
 ### LLM (`llm/`)
 
-- Two stateless protocols. `AsyncChatClient` has `chat(system, messages) -> Completion(text, usage)`, with
-  `messages: Sequence[Message]` (`Message(role, content)`, roles `user` and `assistant`, first and last from the user) and
+- Two stateless protocols. `AsyncChatClient` has `chat(system, messages, tools=None, *, tool_choice="auto") -> Completion(text, usage, tool_calls)`, with
+  `messages: Sequence[Message]` (`Message(role, content, tool_calls, tool_call_id)`, roles `user`, `assistant` and `tool`, the first from the user) and
   `usage: Usage | None`; the library calls it when a client has a callable `chat`. `AsyncLLMClient` keeps its one method,
-  `complete(system, user)`, so a client written for 1.x still works: it is given the same conversation as one user
-  message. Both are public and additive, so nothing breaks. A client with both gets `chat`; an attribute named `chat`
+  `complete(system, user)`: a client with only that is given the same conversation as one user message. Changing the signature of `chat` is a deliberate change of a public protocol, so it is
+  a major version (2.0.0) with a `MIGRATION.md`; at run time a client without the new arguments keeps working, because tools are offered only to a client that takes them. A client with both gets `chat`; an attribute named `chat`
   that is not callable (an SDK client's namespace) does not count. The choice is made in `generate_cypher`, not in an
   adapter, because the one-message form lists the attempts and ends with the instruction once, which a generic
   adapter over turns could not do without parsing the prompt text.
+- **Tools** (`Tool`, `ToolCall`), shaped like the common denominator of the OpenAI SDK, MCP, Anthropic and LangChain: a tool is a name, a description and a JSON Schema for its parameters; a call is an id, a name
+  and arguments as a **dict** (OpenAI sends a JSON string, which `OpenAIClient` parses; invalid JSON gives `{}` so that the answer can say what is missing); an answer is a `"tool"` message carrying the call's id. The client
+  maps them to the API: tools as `{"type": "function", "function": {name, description, parameters}}`, an assistant turn with calls as `tool_calls` with the arguments as a JSON string, a tool turn as
+  `{"role": "tool", "tool_call_id", "content"}`; every call id gets an answer, as OpenAI requires; calls of a kind other than a function are ignored; `tool_choice` is sent only with tools, and `"none"`
+  (not removing the tools, which some providers refuse when the history has tool turns) is how a text answer is forced. `supports_tools(llm)` says whether a client can be offered tools: its
+  `supports_tools` attribute if it has one, else whether `chat` takes `tools` or `**kwargs` (a client that takes `**kwargs` and ignores the tools just returns text, which the loop treats as the answer).
+  `OpenAIClient(tools=False)` and `FakeLLM(tools=False)` say they cannot. `FakeLLM` records the tools and the choice on each `Call` and scripts a tool call with a `Completion` that has `tool_calls`.
 - **The SDK's own client is accepted** wherever an LLM is (`llm/_adapt.py`, `as_client(llm, model)`): an `openai.AsyncOpenAI` (also `AsyncAzureOpenAI`, and one for a compatible
   server) with `model=` becomes an `OpenAIClient` with its defaults. `model=` is required for it (the SDK client has none) and an error with any other kind of client, so it is never silently
   ignored; the synchronous `openai.OpenAI` is a `TypeError`, because the library is async and running it in a thread would break that. `Text2Cypher(client, llm, *, model=None, ...)` and

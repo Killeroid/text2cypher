@@ -22,4 +22,5 @@ troubleshooting
 
 reference
 changelog
+migration
 ```
