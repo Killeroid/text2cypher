@@ -6,6 +6,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Added
 
+- `OpenAIClient(timeout=120.0, max_retries=None)`: how long a call waits for a reply, and how many times the SDK retries a failing one. The SDK's own timeout is 10 minutes, which a loop of up to a dozen calls
+  could multiply into hours on a hung connection. The timeout applies to a client you pass too, and `None` leaves that client's own.
 - `Text2CypherError`, the base of the errors the library raises, and two new ones for a run that stops in the middle: `LLMError` (the LLM client raised) and `DatabaseError` (FalkorDB failed while a query was being
   validated). Both carry `question`, `attempts` and `usage` of the attempts made before the failure, which were paid for and used to be lost, and the original exception as `__cause__`. `FakeLLM` raises a reply that is an exception.
 - `Config(autofix_typos=True)` (off by default): a label, relationship type or property that the validators report as unknown is replaced, without the LLM, by the one name of the graph it is a likely typo of

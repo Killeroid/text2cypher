@@ -234,8 +234,10 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   that is not callable (an SDK client's namespace) does not count. The choice is made in `generate_cypher`, not in an
   adapter, because the one-message form lists the attempts and ends with the instruction once, which a generic
   adapter over turns could not do without parsing the prompt text.
-- `OpenAIClient(model, *, client=None, temperature=0)` uses `AsyncOpenAI` (Chat Completions); pass your own client
-  for an OpenAI-compatible server, and `temperature=None` for a model that only accepts its own. `FakeLLM` replays
+- `OpenAIClient(model, *, client=None, temperature=0, system_role=True, timeout=120.0, max_retries=None)` uses `AsyncOpenAI` (Chat Completions); pass your own client
+  for an OpenAI-compatible server, and `temperature=None` for a model that only accepts its own. The SDK's default timeout is 10 minutes and a question makes up to a dozen calls, so
+  the client sets 2 minutes through `with_options` (a copy that shares the connection pool, so it also applies to a client you pass; `None` leaves that client's own). Retries are the
+  SDK's (2 by default; the option changes them); a call that still fails ends the run with an `LLMError`. `FakeLLM` replays
   scripted replies and records its calls, for tests.
 
 ### Generation (`_generation/`)

@@ -47,6 +47,8 @@ llm = OpenAIClient("your-model")
 * There is no default model: the right one depends on your account and on how large your schema is.
 * `temperature` is `0` by default; `temperature=None` leaves it out, for models that only accept their own.
 * `system_role=False` puts the system text before the text of the first user turn, for a model that has no system role.
+* `timeout` (120 seconds by default) is how long a call waits for a reply before it is given up and retried. The OpenAI SDK waits 10 minutes, and a question can make a dozen calls, so a hung connection could hold a run for hours. Raise it for a model that thinks for longer; `timeout=None` leaves the timeout of the client you pass. It applies to your own `AsyncOpenAI` too.
+* `max_retries` is how many times the SDK retries a call that fails on a timeout, a connection error, a rate limit or a server error, with a pause between. `None` (the default) leaves the client's own setting, which is 2 for the one made here. When a call still fails, the run ends with an `LLMError` that keeps the attempts made so far (see [](usage.md#errors)).
 * It reads `OPENAI_API_KEY` unless you pass your own `AsyncOpenAI` as `client`, for example for an OpenAI-compatible server:
 
 ```python
