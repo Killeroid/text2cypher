@@ -2,7 +2,9 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 1.2.0 - 2026-10-21
+
+A correction is now a conversation that carries every earlier attempt, a query that FalkorDB fails when it runs is corrected, a misspelled name or a broken parameter header can be fixed without the LLM, and the LLM is shown example values of your data. Several defaults and behaviours change, so read **Changed** before you upgrade: the limits are higher, example values are sent to the LLM provider unless you pass `example_values=0`, `execute=True` can now end as `failed`, and a failure of the LLM client reaches you as an `LLMError`.
 
 ### Added
 
