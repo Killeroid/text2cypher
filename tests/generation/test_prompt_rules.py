@@ -13,6 +13,7 @@ from falkordb.asyncio import FalkorDB
 from falkordb.asyncio.graph import AsyncGraph
 
 from text2cypher._generation.prompts import (
+    EXAMPLE_PARAMETER_QUERY,
     EXAMPLE_QUERY,
     FULLTEXT_EXAMPLE,
     PARAMETER_EXAMPLE,
@@ -83,6 +84,22 @@ async def test_the_example_query_is_valid_on_the_example_schema(falkordb_client)
     try:
         assert await codes(falkordb_client, name, EXAMPLE_QUERY) == []
         assert (await graph.ro_query(EXAMPLE_QUERY)).result_set == [["Ada"]]
+    finally:
+        await graph.delete()
+
+
+async def test_the_example_query_with_a_parameter_header_is_valid_and_gives_the_same_rows(
+    falkordb_client,
+):
+    name = f"example_{uuid.uuid4().hex[:8]}"
+    graph = falkordb_client.select_graph(name)
+    await graph.query(
+        "CREATE (:Employee {name: 'Ada'})-[:WORKS_IN]->(:Department {name: 'Sales'})"
+    )
+    try:
+        assert await codes(falkordb_client, name, EXAMPLE_PARAMETER_QUERY) == []
+        rows = (await graph.ro_query(EXAMPLE_PARAMETER_QUERY)).result_set
+        assert rows == (await graph.ro_query(EXAMPLE_QUERY)).result_set
     finally:
         await graph.delete()
 

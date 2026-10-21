@@ -11,6 +11,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Changed
 
+- The system prompt asks the LLM to check its query before it answers: valid syntax, every name in the schema, the direction of every relationship, read-only, and only what the question asks for. Whether it
+  saves corrections has not been measured: both test graphs were already at the ceiling. With `use_parameters` it also checks that every `$parameter` has a value in the `CYPHER`
+  header, and the format example in the prompt is shown with a header, so it no longer contradicts the rule.
 - A correction now carries every query the LLM wrote so far with what was wrong with it, not only the last one, so it does not repeat a mistake it was told about. Each failed query is an
   assistant turn followed by a user turn with its problems, and the failed query is no longer quoted again in the turn about it.
 - When the schema changes from the filtered to the full one, the earlier turns are kept and the first turn after the change tells the LLM that the schema now lists the whole graph.

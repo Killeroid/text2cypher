@@ -235,6 +235,11 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   declined reply (an empty block) is never a turn: it is asked again with the same turns and the full schema.
   A client with only `complete` gets the conversation as one user message: the question, the note if any, "Earlier
   attempts, oldest first" with each query and its problems, and the instruction once at the end.
+- **Check section**, after the rules and before the reply format: the LLM is asked to check the query before it answers (valid syntax; every label, relationship type and property in the schema as spelled; every
+  relationship in the direction the schema shows; read-only; only what the question asks for) and not to write the checks in its reply. The validators run the same checks afterwards, but a mistake the LLM catches costs
+  no correction. About 55 words in every system prompt; not measured (both trial graphs were at the ceiling), so the changelog says so. With `Config.use_parameters` it also checks
+  that every `$parameter` has a value in the `CYPHER` header, separated by spaces and not commas (the commonest problem in that mode), and the format example is shown with a header, so
+  the example never contradicts the rule that values go in parameters (default mode is byte for byte what it was; both examples are run on FalkorDB by `test_prompt_rules.py`).
 - **Rules block**: read-only; write values inline and never `$param` (a bare `$n` is `ParameterNotProvided`), unless
   `Config.use_parameters` swaps that rule for one that asks for the values in a `CYPHER` header (see Parameters); for a
   shortest path between two nodes use `algo.SPpaths`, since FalkorDB supports `shortestPath` only in `WITH` or
@@ -343,7 +348,6 @@ Each item says what would bring it back.
   case-insensitive match is often what the question means. Decide with the harness.
 - More path guidance (`algo.SSpaths`, weighted paths, `pathCount`, bounded variable-length paths); `LIMIT`
   guidance (adding a limit the question did not ask for changes the answer).
-- A validation checklist inside the prompt (it adds tokens for checks the validator does).
 - Few-shot examples generated from the schema; the schema as inline Cypher patterns instead of the Neo4j-style
   text; the schema in the user message instead of the system prompt (ours keeps a stable prefix for provider
   prompt caching); a numbered `code: description` error format for the corrector.

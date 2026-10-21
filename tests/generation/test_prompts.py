@@ -31,6 +31,33 @@ def test_generator_system_says_so_when_the_graph_is_empty():
     assert "no data" in generator_system(GraphSchema({}, {}, ()))
 
 
+def test_generator_system_asks_the_model_to_check_its_query_before_it_replies():
+    prompt = generator_system(SCHEMA)
+
+    checks = prompt[prompt.index("Before you answer") : prompt.index("Reply with")]
+    for check in ("syntax is valid", "in the schema", "points the way", "read-only"):
+        assert check in checks
+    assert "Do not write the checks in your reply." in checks
+    # after the rules and before the format and the schema
+    assert prompt.index("Rules:") < prompt.index("Before you answer")
+    assert prompt.index("Reply with") < prompt.index("Schema:")
+
+
+def test_the_checks_and_the_example_follow_the_mode_of_the_values():
+    inline = generator_system(SCHEMA)
+    header = generator_system(SCHEMA, parameterize=True)
+
+    assert "$parameter has a value" not in inline
+    assert "WHERE d.name = 'Sales'" in inline
+    assert "CYPHER header, with the values separated by spaces" in header
+    assert "$parameter has a value" in header
+    assert "CYPHER name='Sales' MATCH" in header
+    assert "WHERE d.name = 'Sales'" not in header
+    # the check for the header comes with the other checks, before the reply format
+    assert header.index("Before you answer") < header.index("$parameter has a value")
+    assert header.index("$parameter has a value") < header.index("Reply with")
+
+
 def test_generator_user_is_the_question():
     assert generator_user("Who acted in Heat?") == "Question: Who acted in Heat?"
 

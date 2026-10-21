@@ -22,6 +22,10 @@ EXAMPLE_QUERY = (
     "MATCH (e:Employee)-[:WORKS_IN]->(d:Department) "
     "WHERE d.name = 'Sales' RETURN e.name"
 )
+EXAMPLE_PARAMETER_QUERY = (
+    "CYPHER name='Sales' MATCH (e:Employee)-[:WORKS_IN]->(d:Department) "
+    "WHERE d.name = $name RETURN e.name"
+)
 
 _INTRO = """\
 You write read-only openCypher queries for a FalkorDB graph database. For each \
@@ -97,7 +101,34 @@ _FUNCTION_RULE = (
     "only the ones listed, and only when the question needs them."
 )
 
-_FORMAT_AND_EXAMPLES = f"""\
+# What the LLM is asked to check before it replies. The validators check the same things
+# afterwards; a mistake the LLM catches itself costs no correction.
+_CHECKS = (
+    "- the syntax is valid openCypher, with brackets, quotes and keywords in the right places;",
+    "- every label, relationship type and property is in the schema, spelled as written there;",
+    "- every relationship points the way the schema shows it;",
+    "- the query is read-only;",
+    "- it returns what the question asks for, and no more.",
+)
+_PARAMETER_CHECK = (
+    "- every $parameter has a value in the CYPHER header, with the values separated by "
+    "spaces and not by commas;"
+)
+
+
+def _checks(parameterize: bool) -> str:
+    syntax, *others = _CHECKS
+    bullets = [syntax, *([_PARAMETER_CHECK] if parameterize else []), *others]
+    return (
+        "Before you answer, check the query:\n"
+        + "\n".join(bullets)
+        + "\nIf a check fails, fix the query first. Do not write the checks in your reply."
+    )
+
+
+def _format_and_examples(parameterize: bool) -> str:
+    example = EXAMPLE_PARAMETER_QUERY if parameterize else EXAMPLE_QUERY
+    return f"""\
 Reply with the query in one ```cypher code block and nothing else.
 
 These examples use another schema; they show the format only. With \
@@ -105,7 +136,7 @@ These examples use another schema; they show the format only. With \
 
 Question: Who works in Sales?
 ```cypher
-{EXAMPLE_QUERY}
+{example}
 ```
 
 Question: Remove all employees.
@@ -128,7 +159,9 @@ def generator_system(schema: GraphSchema, *, parameterize: bool = False) -> str:
         or "The graph has no data yet, so there is nothing to query."
     )
     return (
-        f"{_INTRO}\n\nRules:\n" + "\n".join(rules) + f"\n\n{_FORMAT_AND_EXAMPLES}"
+        f"{_INTRO}\n\nRules:\n"
+        + "\n".join(rules)
+        + f"\n\n{_checks(parameterize)}\n\n{_format_and_examples(parameterize)}"
         f"\nSchema:\n{text}\n"
     )
 
