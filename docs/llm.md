@@ -87,6 +87,17 @@ llm = OpenAIClient(
 )
 ```
 
+### Model Selection
+
+Choose llm models based on your requirements. Different models provide different balances of speed and accuracy and cost. See an example comparison:
+
+| Model | Speed | Accuracy | Cost | Use Case |
+|-------|-------|----------|------|----------|
+| gpt-4o-mini | Fast | Good | Low | Development, simple queries |
+| gpt-4o | Medium | Better | Medium | Production, complex queries |
+| gpt-4 | Slow | Best | High | Critical queries, complex schemas |
+
+
 ## Testing your code
 
 {py:class}`~text2cypher.FakeLLM` replays scripted replies in order and records what it was asked in `calls`, so you can test code that uses text2cypher without a model. A reply is a string, or a `Completion` to give token usage:
