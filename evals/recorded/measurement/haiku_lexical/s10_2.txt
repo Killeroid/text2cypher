@@ -1,0 +1,3 @@
+```cypher
+MATCH (c:Customer {name: 'Acme'})-[:PLACED]->(o:Order)-[:BILLED_BY]->(i:Invoice)-[:SETTLED_BY]->(p:Payment) RETURN sum(p.amount)
+```

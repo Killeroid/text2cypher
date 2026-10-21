@@ -1,0 +1,3 @@
+```json
+{"labels": ["Project", "Customer", "Employee"], "relationship_types": ["FOR_CUSTOMER", "MANAGES"]}
+```

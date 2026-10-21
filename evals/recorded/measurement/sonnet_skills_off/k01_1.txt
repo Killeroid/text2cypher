@@ -1,0 +1,3 @@
+```cypher
+MATCH (a:City {name: 'A'}), (b:City {name: 'D'}) CALL algo.SPpaths({sourceNode: a, targetNode: b, relTypes: ['ROAD'], relDirection: 'outgoing', pathCount: 1, weightProp: 'dist'}) YIELD path RETURN [n IN nodes(path) | n.name] AS route
+```

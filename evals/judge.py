@@ -16,8 +16,15 @@ from text2cypher.schema import GraphSchema, filter_schema
 type Rows = list[tuple[str, ...]]
 
 
+def _text(value: Any) -> str:
+    """A value as text; a float that is a whole number reads as the integer (30.0 is 30)."""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
 def normalize_rows(rows: Sequence[Sequence[Any]]) -> Rows:
-    return sorted(tuple(sorted(str(value) for value in row)) for row in rows)
+    return sorted(tuple(sorted(_text(value) for value in row)) for row in rows)
 
 
 def _contains(row: tuple[str, ...], wanted: tuple[str, ...]) -> bool:
@@ -90,10 +97,20 @@ def _names(schema: GraphSchema) -> set[str]:
     return set(schema.node_properties) | set(schema.relationship_properties)
 
 
-def filter_note(schema: GraphSchema, question: Question | Seeded) -> str:
-    """How much of the schema the filter kept, and whether the gold query needed more."""
-    kept = filter_schema(schema, question.text)
-    note = "whole" if kept == schema else f"{len(_names(kept))}/{len(_names(schema))}"
+def filter_note(
+    schema: GraphSchema, question: Question | Seeded, kept: GraphSchema | None = None
+) -> str:
+    """How much of the schema the filter kept, and whether the gold query needed more.
+
+    ``kept`` is what the pipeline's filter kept; without it, the lexical filter is run.
+    """
+    if kept is None:
+        kept = filter_schema(schema, question.text)
+    note = (
+        "whole"
+        if _names(kept) == _names(schema)
+        else f"{len(_names(kept))}/{len(_names(schema))}"
+    )
     # Any word of the gold text that is a name in the schema: this also finds a
     # relationship type that is only written in a string, as in relTypes: ['KNOWS']
     needed = set(re.findall(r"[A-Za-z_]\w*", question.gold or "")) & _names(schema)

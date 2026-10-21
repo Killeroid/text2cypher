@@ -1,0 +1,3 @@
+```cypher
+MATCH (e1:Employee {name: 'Sam Okoye'})-[:SITS_IN]->(o:Office)<-[:SITS_IN]-(e2:Employee) WHERE e1 <> e2 RETURN e2.name
+```

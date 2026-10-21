@@ -1,0 +1,3 @@
+```cypher
+MATCH (lead:Lead)-[:CONVERTED_TO]->(c:Customer {name: 'Acme'}) RETURN lead.name
+```

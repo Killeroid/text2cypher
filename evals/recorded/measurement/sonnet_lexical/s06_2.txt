@@ -1,0 +1,3 @@
+```cypher
+MATCH (w:Warehouse)-[:STOCKS]->(:Product)-[:SUPPLIED_BY]->(s:Supplier) WHERE w.name = 'Rotterdam' RETURN DISTINCT s.name
+```

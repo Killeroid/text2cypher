@@ -1,0 +1,3 @@
+```cypher
+MATCH (e:Employee)-[:REPORTS_TO]->(m:Employee) WHERE e.name = 'Sam Okoye' RETURN m.name
+```

@@ -1,0 +1,3 @@
+```cypher
+MATCH (e:Employee)-[:MANAGES]->(:Project)-[:FOR_CUSTOMER]->(c:Customer) WHERE c.name = 'Acme' RETURN DISTINCT e.name
+```

@@ -1,0 +1,3 @@
+```cypher
+MATCH (e:Employee)-[:HOLDS]->(c:Certification), (e)-[:HAS_SKILL]->(s:Skill) WHERE c.name = 'Cloud' AND s.name = 'Python' RETURN DISTINCT e.name
+```

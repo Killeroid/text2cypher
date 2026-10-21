@@ -1,0 +1,3 @@
+```cypher
+MATCH (e:Employee)-[:ATTENDED]->(:Meeting)-[:ABOUT]->(d:Document) WHERE toLower(d.title) CONTAINS 'budget' RETURN DISTINCT e.name
+```

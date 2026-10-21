@@ -1,0 +1,3 @@
+```cypher
+MATCH (e:Employee)-[r:ASSIGNED_TO]->(t:Task) WHERE e.name = 'Sam Okoye' RETURN t.title, r.hours
+```

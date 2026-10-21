@@ -1,0 +1,3 @@
+```cypher
+MATCH (c:Campaign)<-[:FROM_CAMPAIGN]-(l:Lead)-[:CONVERTED_TO]->(cust:Customer) RETURN DISTINCT c.name
+```

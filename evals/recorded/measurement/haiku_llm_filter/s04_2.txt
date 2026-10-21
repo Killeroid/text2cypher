@@ -1,0 +1,3 @@
+```cypher
+MATCH (e:Employee {name: 'Sam Okoye'})-[:ASSIGNED_TO]->(t:Task) RETURN t.title
+```

@@ -1,0 +1,3 @@
+```cypher
+MATCH (e:Employee)-[:HOLDS]->(c:Certification {name: 'Cloud'}) RETURN e.name
+```

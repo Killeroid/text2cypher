@@ -89,6 +89,7 @@ async def test_a_question_without_a_reply_waits_for_the_first_one(
         ([["Matrix", 8.7]], [["Matrix"]], "OK (extra columns)"),
         ([[1, "Action"], [2, "Crime"]], [["Action"], ["Crime"]], "OK (extra columns)"),
         ([["a"], ["a"]], [["a"], ["a"]], "OK"),
+        ([[30]], [[30.0]], "OK"),  # a whole float is the integer
         ([["a", "x"], ["a", "y"]], [["a"], ["a"]], "OK (extra columns)"),
         # the first wanted row must not take the row the second one needs
         ([["a", "b"], ["a", "c"]], [["a"], ["b"]], "OK (extra columns)"),

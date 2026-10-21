@@ -1,0 +1,3 @@
+```cypher
+MATCH (c:City) RETURN percentile_disc(c.pop, 0.5) AS median_population
+```

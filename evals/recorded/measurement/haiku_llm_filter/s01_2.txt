@@ -1,0 +1,3 @@
+```cypher
+MATCH (e:Employee {name: 'Sam Okoye'})-[:REPORTS_TO]->(m:Employee) RETURN m.name
+```

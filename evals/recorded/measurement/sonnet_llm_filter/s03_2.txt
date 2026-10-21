@@ -1,0 +1,3 @@
+```cypher
+MATCH (e:Employee)-[:SITS_IN]->(:Office)-[:LOCATED_IN]->(c:City) RETURN DISTINCT c.name
+```

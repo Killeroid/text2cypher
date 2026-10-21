@@ -1,0 +1,3 @@
+```cypher
+MATCH (c:City) WITH DISTINCT c.pop AS pop ORDER BY pop DESC RETURN COLLECT(pop) AS populations
+```

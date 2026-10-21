@@ -1,0 +1,3 @@
+```cypher
+MATCH (c:Customer)-[:HAS_ACCOUNT]->(a:Account) WHERE a.balance > 1000 RETURN c.name
+```

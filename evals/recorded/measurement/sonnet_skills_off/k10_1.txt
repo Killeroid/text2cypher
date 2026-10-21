@@ -1,0 +1,3 @@
+```cypher
+MATCH (c:City) RETURN percentileDisc(c.pop, 0.9) AS p90
+```

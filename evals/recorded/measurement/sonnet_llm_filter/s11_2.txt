@@ -1,0 +1,3 @@
+```cypher
+MATCH (p:Project)-[:USES_REPOSITORY]->(:Repository)-[:HAS_COMMIT]->(c:Commit)<-[:AUTHORED]-(e:Employee) WHERE p.name = 'Phoenix' RETURN DISTINCT e.name
+```

@@ -1,0 +1,7 @@
+```cypher
+MATCH (c:City)
+WITH c.pop AS pop
+ORDER BY pop ASC
+WITH collect(pop) AS pops
+RETURN pops[toInteger(0.9 * length(pops))] AS percentile_90th
+```

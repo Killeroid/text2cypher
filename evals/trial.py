@@ -14,6 +14,11 @@ From the repository root::
 
 Add ``--dataset company`` to use the large company graph (judged by validation only).
 
+To try a change of the pipeline add ``--filter llm`` (the schema is chosen by a model that is asked first, so
+its prompt is the first reply of a question), ``--filter none``, ``--skills`` (the model may reply
+``CALL read_skill {"id": "..."}`` to read a skill, as a model that cannot make a tool call stands in for one) or
+``--example-values N``.
+
 It needs the dev dependencies (the embedded FalkorDB server).
 """
 
@@ -26,7 +31,7 @@ from evals.dataset import Dataset, Question, Seeded
 from evals.datasets import DATASETS
 from evals.datasets.movies import MOVIES
 from evals.metrics import format_metrics, summarize
-from evals.replay import Finished, Pending, replay, trial_client
+from evals.replay import Condition, Finished, Pending, replay, trial_client
 from text2cypher import Result
 
 
@@ -107,9 +112,12 @@ def format_report(items: Sequence[Pending | Finished]) -> str:
             continue
         result, question = item.result, item.question
         scopes = scopes_of(result)
+        read = [skill for attempt in result.attempts for skill in attempt.skills]
+        extra = f", read {','.join(dict.fromkeys(read))}" if read else ""
         lines.append(
             f"{question.id} [{question.category}] {result.status}, "
-            f"{len(result.attempts)} attempt(s) [{scopes}], filter {item.filter_note}: "
+            f"{len(result.attempts)} attempt(s) [{scopes}], {item.replies} reply(ies), "
+            f"filter {item.filter_note}{extra}: "
             f"{item.verdict}\n     query: {result.query!r}"
         )
         for attempt in result.attempts[:-1]:
@@ -126,12 +134,14 @@ def format_report(items: Sequence[Pending | Finished]) -> str:
     return "\n".join(lines)
 
 
-async def _round(replies_dir: Path, seeded: bool, dataset: Dataset) -> None:
+async def _round(
+    replies_dir: Path, seeded: bool, dataset: Dataset, condition: Condition
+) -> None:
     questions: Sequence[Question | Seeded] = (
         dataset.seeded if seeded else dataset.questions
     )
     async with trial_client(dataset) as client:
-        items = await replay(client, replies_dir, questions, dataset)
+        items = await replay(client, replies_dir, questions, dataset, condition)
     write_pending(replies_dir, items)
     print(format_report(items))
 
@@ -144,14 +154,36 @@ def main(argv: Sequence[str] | None = None) -> None:
         "--seeded", action="store_true", help="replay the seeded questions"
     )
     parser.add_argument("--dataset", choices=sorted(DATASETS), default="movies")
+    parser.add_argument(
+        "--only", help="run only these question ids, separated by commas"
+    )
+    parser.add_argument(
+        "--filter",
+        choices=["lexical", "llm", "none"],
+        default="lexical",
+        help="the schema filter: the lexical one, an LLM that is asked first, or none",
+    )
+    parser.add_argument(
+        "--skills", action="store_true", help="offer the model the skills to read"
+    )
+    parser.add_argument(
+        "--example-values", type=int, default=3, help="example values per property"
+    )
     args = parser.parse_args(argv)
+    condition = Condition(args.filter, args.skills, args.example_values)
     dataset = DATASETS[args.dataset]
+    if args.only:
+        wanted = set(args.only.split(","))
+        dataset = dataset._replace(
+            questions=tuple(q for q in dataset.questions if q.id in wanted),
+            seeded=tuple(q for q in dataset.seeded if q.id in wanted),
+        )
     if args.command == "gold":
         write_gold(args.directory, dataset)
     elif args.command == "seed":
         write_seed(args.directory, dataset)
     else:
-        asyncio.run(_round(args.directory, args.seeded, dataset))
+        asyncio.run(_round(args.directory, args.seeded, dataset, condition))
 
 
 if __name__ == "__main__":

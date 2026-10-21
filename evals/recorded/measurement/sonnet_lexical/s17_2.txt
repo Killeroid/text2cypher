@@ -1,0 +1,3 @@
+```cypher
+MATCH (e:Employee)-[:HOLDS]->(c:Certification), (e)-[:HAS_SKILL]->(s:Skill) WHERE toLower(c.name) CONTAINS 'cloud' AND s.name = 'Python' RETURN DISTINCT e.name
+```

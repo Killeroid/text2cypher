@@ -1,0 +1,3 @@
+```cypher
+MATCH (a:Employee)-[:REPORTS_TO]->(b:Employee)<-[:REPORTS_TO]-(o:Employee) WHERE a.name = 'Sam Okoye' AND o.name <> a.name RETURN DISTINCT o.name
+```

@@ -1,0 +1,7 @@
+```cypher
+MATCH (c:City)
+WITH LOWER(c.name) AS name
+ORDER BY name
+WITH collect(name) AS names
+RETURN reduce(acc = '', n IN names | CASE WHEN acc = '' THEN n ELSE acc + ',' + n END) AS result
+```

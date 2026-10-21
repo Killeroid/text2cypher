@@ -1,0 +1,3 @@
+```cypher
+MATCH (e:Employee)-[:ATTENDED]->(m:Meeting)-[:ABOUT]->(d:Document {title: 'budget'}) RETURN e.name
+```

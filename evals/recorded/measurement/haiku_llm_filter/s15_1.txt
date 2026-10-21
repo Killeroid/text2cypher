@@ -1,0 +1,3 @@
+```json
+{"labels": ["Campaign", "Lead", "Customer"], "relationship_types": ["FROM_CAMPAIGN", "CONVERTED_TO"]}
+```

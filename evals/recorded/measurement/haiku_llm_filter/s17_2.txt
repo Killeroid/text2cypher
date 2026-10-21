@@ -1,0 +1,3 @@
+```cypher
+MATCH (e:Employee)-[:HAS_ROLE]->(r:Role {title: 'technician'}), (e)-[:HOLDS]->(cert:Certification {name: 'Cloud'}), (e)-[:HAS_SKILL]->(skill:Skill {name: 'Python'}) RETURN e.name
+```

@@ -1,0 +1,3 @@
+```cypher
+CALL algo.pageRank('Person', 'KNOWS') YIELD node, score RETURN node.name AS name ORDER BY score DESC LIMIT 1
+```

@@ -1,0 +1,3 @@
+```cypher
+MATCH (a:City {name: 'A'}) MATCH (a)-[:ROAD*]->(reachable:City) RETURN count(DISTINCT reachable) + 1
+```

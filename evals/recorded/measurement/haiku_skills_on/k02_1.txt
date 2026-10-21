@@ -1,0 +1,1 @@
+CALL read_skill {"id": "graph-algorithms"}

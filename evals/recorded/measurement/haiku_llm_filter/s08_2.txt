@@ -1,0 +1,3 @@
+```cypher
+MATCH (c:Customer)-[:RAISED]->(t:Ticket)-[:ASSIGNED_TO]->(e:Employee) RETURN e.name
+```

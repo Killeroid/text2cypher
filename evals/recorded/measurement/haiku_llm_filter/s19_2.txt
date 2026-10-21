@@ -1,0 +1,3 @@
+```cypher
+MATCH (e:Employee)-[:MANAGES]->(p:Project)-[:FOR_CUSTOMER]->(c:Customer {name: 'Acme'}) RETURN e.name
+```

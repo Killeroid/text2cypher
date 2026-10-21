@@ -1,0 +1,3 @@
+```cypher
+MATCH (c:Customer)-[:PLACED]->(:Order)-[:CONTAINS]->(:OrderLine)-[:OF_PRODUCT]->(p:Product) WHERE c.name = 'Acme' RETURN DISTINCT p.name
+```

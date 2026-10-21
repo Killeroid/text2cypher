@@ -1,0 +1,5 @@
+```cypher
+CALL algo.WCC({nodeLabels: ['Person'], relationshipTypes: ['KNOWS']}) YIELD componentId
+WITH DISTINCT componentId
+RETURN count(*) AS groups
+```

@@ -1,0 +1,3 @@
+```cypher
+MATCH (c:Customer {name: 'Acme'})-[:PLACED]->(o:Order)-[:CONTAINS]->(ol:OrderLine)-[:OF_PRODUCT]->(p:Product) RETURN p.name
+```

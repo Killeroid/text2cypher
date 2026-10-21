@@ -1,0 +1,5 @@
+```cypher
+MATCH (a:City {name: 'A'})
+CALL algo.BFS(a, -1, 'ROAD') YIELD nodes
+RETURN size(nodes) + 1 AS reachable
+```

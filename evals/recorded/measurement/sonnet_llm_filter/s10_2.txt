@@ -1,0 +1,3 @@
+```cypher
+MATCH (c:Customer)-[:PLACED]->(:Order)-[:BILLED_BY]->(:Invoice)-[:SETTLED_BY]->(p:Payment) WHERE c.name = 'Acme' RETURN sum(p.amount) AS total_paid
+```

@@ -1,0 +1,3 @@
+```json
+{"labels": ["Employee", "Asset", "Device"], "relationship_types": ["OWNS", "REGISTERED_AS"]}
+```

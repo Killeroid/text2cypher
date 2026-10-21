@@ -54,6 +54,26 @@ each gold query against it, offline, and `measure` runs the schema filter on eac
 many of the 80 names it kept, and which names the gold query needed and it dropped. It needs no
 model and no database; `tests/trial/test_company_schema.py` pins the result.
 
+## Measuring the LLM schema filter and skills
+
+`--filter {lexical,llm,none}`, `--skills` and `--example-values N` run the questions under a `Condition`;
+`--only q1,q2` runs some of them. A reply of `CALL read_skill {"id": "..."}` lines stands in for a native tool call.
+`datasets/company_synonyms.py` (20 reworded questions on the 36-label company schema) is for the filter,
+`datasets/skills.py` (15 questions on a small graph with data) for the skills. One agent per cell: an agent that
+handled two cells mixed their replies once. The replies of the cells that were measured are in `recorded/measurement/`,
+and `tests/trial/test_measurement.py` replays them:
+
+| | Haiku | Sonnet |
+|---|---|---|
+| lexical filter, right on the first schema | 12/20 | 11/20 |
+| LLM filter, right on the first schema | 20/20 | 19/20 |
+| skills off, answered correctly | 10/15 | 15/15 |
+| skills on, answered correctly | 12/15 | 15/15 |
+
+Every company question ended valid either way, since a miss is retried on the full schema; the company graph has no
+data, so those are judged by validation alone. One run per cell by an agent, not a bare API call: read it as a signal.
+Not measured: example values, the check section, a larger schema, other models.
+
 ## Code
 
 `data.py` (the film graph and questions), `replay.py` (runs the questions with the replay LLM),

@@ -1,0 +1,3 @@
+```cypher
+MATCH (d:Device {model: 'laptop'})-[:REGISTERED_AS]->(a:Asset)<-[:OWNS]-(e:Employee) RETURN e.name
+```

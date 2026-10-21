@@ -1,0 +1,5 @@
+```cypher
+MATCH (c:City)
+WITH collect(toLower(c.name)) AS names
+RETURN string.join(list.sort(names), ',')
+```

@@ -1,0 +1,3 @@
+```cypher
+MATCH (c:City)-[:ROAD]->() RETURN c.name, count(*) AS roads GROUP BY c.name
+```

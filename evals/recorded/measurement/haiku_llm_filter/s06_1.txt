@@ -1,0 +1,3 @@
+```json
+{"labels": ["Warehouse", "Product", "Supplier"], "relationship_types": ["STOCKS", "SUPPLIED_BY"]}
+```

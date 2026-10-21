@@ -1,0 +1,3 @@
+```cypher
+MATCH (e:Employee)-[:OWNS]->(a:Asset)<-[:REGISTERED_AS]-(d:Device) WHERE toLower(d.model) CONTAINS 'laptop' RETURN DISTINCT e.name
+```

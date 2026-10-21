@@ -1,0 +1,3 @@
+```cypher
+MATCH (c:City) WITH c ORDER BY c.name DESC RETURN COLLECT(c.name) AS cities
+```

@@ -1,0 +1,3 @@
+```cypher
+MATCH (c:Customer)-[:LOCATED_IN]->(country:Country) RETURN DISTINCT country.name
+```

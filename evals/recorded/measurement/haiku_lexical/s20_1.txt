@@ -1,0 +1,3 @@
+```cypher
+MATCH (d:Department)-[:FUNDS]->(p:Project) WHERE p.status = 'active' RETURN d.name
+```

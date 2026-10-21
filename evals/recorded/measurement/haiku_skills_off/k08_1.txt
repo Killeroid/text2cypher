@@ -1,0 +1,3 @@
+```cypher
+MATCH (a:City {name: 'A'}), (a)-[:ROAD*0..]->(c:City) RETURN COUNT(DISTINCT c)
+```

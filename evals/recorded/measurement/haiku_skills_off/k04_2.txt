@@ -1,0 +1,5 @@
+```cypher
+MATCH (c:City)
+WITH collect(c.pop) AS populations
+RETURN populations[toInteger(size(populations) / 2)] AS median_population
+```

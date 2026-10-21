@@ -1,0 +1,3 @@
+```cypher
+MATCH (d:Department)-[:FUNDS]->(p:Project {status: 'active'}) RETURN DISTINCT d.name
+```

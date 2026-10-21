@@ -8,7 +8,10 @@ The replies of the second trial (2026-10-20), written by Claude Haiku agents tha
 - `seeded/`: the 9 seeded questions (the first reply is the flawed query written by `evals.trial seed`,
   the next ones are the agents' corrections).
 
-They are the answers of one small model on one day, kept as a regression fixture: replaying them through the
+`measurement/` holds the replies of the measurement of the LLM schema filter and of skills (2026-10-21), one folder
+per cell, from Haiku and Sonnet agents (see `evals/README.md`); `tests/trial/test_measurement.py` pins their numbers.
+
+The others are the answers of one small model on one day, kept as a regression fixture: replaying them through the
 current code must give the outcomes pinned in `tests/trial/test_recorded_trial.py`. That pins the behaviour of the
 schema filter, the validator, the issue merging, the loop (corrections, the retry on the full schema, giving up,
 declining) and the execution. It does not pin the wording of the prompts (a reply is not compared with the prompt it

@@ -1,0 +1,3 @@
+```cypher
+MATCH (c:City) RETURN SUM(c.pop)
+```

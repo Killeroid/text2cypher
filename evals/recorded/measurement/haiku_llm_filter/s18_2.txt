@@ -1,0 +1,3 @@
+```cypher
+MATCH (c:Customer {name: 'Acme'})-[:RAISED]->(t:Ticket)-[:CAUSED_BY]->(i:Incident) RETURN i.title
+```

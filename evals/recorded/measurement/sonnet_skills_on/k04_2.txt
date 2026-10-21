@@ -1,0 +1,4 @@
+```cypher
+MATCH (c:City)
+RETURN percentileCont(c.pop, 0.5) AS median
+```
