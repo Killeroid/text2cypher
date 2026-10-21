@@ -11,8 +11,12 @@ class Config:
     with the filtered schema; the rest, up to ``total_attempts``, with the full one.
 
     With ``execute``, a query that passed validation is run (read-only) and its rows
-    are on the result. Generated queries can be expensive, so a run is stopped after
-    ``execute_timeout_ms`` milliseconds; ``None`` lets it run without limit.
+    are on the result. If FalkorDB rejects or fails it (a type error on a value, a
+    division by zero), that error is sent back for a correction, which counts like any
+    other, and the result is ``failed`` when the corrections run out. Generated queries
+    can be expensive, so a run is stopped after ``execute_timeout_ms`` milliseconds;
+    ``None`` lets it run without limit. A timeout or a lost connection ends the run with
+    the valid query and the error, because it says nothing about the query.
 
     Two optional checks report more than the validators do by default. ``check_types``
     (on) reports a property compared with a value of another type, and ``sum``, ``avg`` and
@@ -37,8 +41,8 @@ class Config:
         attempts_w_filtered: Corrections made with the filtered schema.
         total_attempts: Corrections in all, with the filtered and the full schema. The
             first query is not a correction.
-        execute: Run the final query when it is valid, read-only, and put the rows on
-            the result.
+        execute: Run a query that is valid, read-only, correct it if FalkorDB fails it, and
+            put the rows on the result.
         execute_timeout_ms: Stop an execution after this many milliseconds, or never
             if ``None``.
         use_parameters: Ask the LLM for the values in a ``CYPHER`` header and parameters.
@@ -48,8 +52,8 @@ class Config:
             most this often, or read it on every run if ``None``.
     """
 
-    attempts_w_filtered: int = 3
-    total_attempts: int = 5
+    attempts_w_filtered: int = 5
+    total_attempts: int = 10
     execute: bool = False
     execute_timeout_ms: int | None = 10_000
     schema_refresh_seconds: float | None = None

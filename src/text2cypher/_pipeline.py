@@ -1,12 +1,11 @@
 """The entry point: ask a question of a graph."""
 
-from dataclasses import replace
+from collections.abc import Awaitable, Callable
 
 from falkordb.asyncio import FalkorDB
-from redis.exceptions import RedisError
 
 from text2cypher._config import Config
-from text2cypher._execution import execute_cypher
+from text2cypher._execution import Execution, run_query
 from text2cypher._results import Result
 from text2cypher._schema_source import SchemaSource
 from text2cypher._validation import QueryValidator
@@ -49,10 +48,12 @@ class Text2Cypher:
         """Write a query for ``question`` over the graph named ``graph``.
 
         The schema is read from the graph on every call, or kept as
-        ``config.schema_refresh_seconds`` says. With ``config.execute``, a
-        valid query is also run, and the rows or the error are on the result: FalkorDB
-        rejecting or failing the query, a timeout or a lost connection are all recorded
-        there; any other error is a bug and propagates.
+        ``config.schema_refresh_seconds`` says. With ``config.execute``, a query that
+        passed validation is also run, read-only. If FalkorDB rejects or fails it, that
+        error is what the next correction is told, and the result is ``failed`` when the
+        corrections run out. The rows are on the result; a timeout or a lost connection
+        ends the loop with the valid query and the error on the result. Any other error
+        is a bug and propagates.
 
         Raises:
             GraphNotFoundError: If the graph does not exist (or has no labelled nodes or
@@ -67,27 +68,21 @@ class Text2Cypher:
             check_types=self._config.check_types,
             check_performance=self._config.check_performance,
         )
-        result = await run_workflow(
+        return await run_workflow(
             question,
             schema_from_snapshot(snapshot),
             llm=self._llm,
             validate=lambda query: validator.validate(query, graph),
             config=self._config,
             schema_filter=self._schema_filter,
+            execute=self._executor(graph),
         )
-        if self._config.execute and result.status == "valid":
-            return await self._execute(result, graph)
-        return result
 
-    async def _execute(self, result: Result, graph: str) -> Result:
-        """``result`` with the rows its query returns, or why it did not run."""
-        try:
-            records = await execute_cypher(
-                self._client.select_graph(graph),
-                result.query,
-                timeout_ms=self._config.execute_timeout_ms,
-            )
-        except RedisError as error:
-            # The LLM calls are paid for: keep the valid query and say why it did not run
-            return replace(result, execution_error=str(error))
-        return replace(result, records=records)
+    def _executor(self, graph: str) -> Callable[[str], Awaitable[Execution]] | None:
+        """What runs a query read-only on ``graph``, or ``None`` if execution is off."""
+        if not self._config.execute:
+            return None
+        handle = self._client.select_graph(graph)
+        return lambda query: run_query(
+            handle, query, timeout_ms=self._config.execute_timeout_ms
+        )

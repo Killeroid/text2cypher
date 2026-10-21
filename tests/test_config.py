@@ -19,7 +19,7 @@ def test_config_rejects_impossible_limits(kwargs: dict[str, Any], message: str):
 
 
 def test_config_defaults():
-    assert Config() == Config(attempts_w_filtered=3, total_attempts=5)
+    assert Config() == Config(attempts_w_filtered=5, total_attempts=10)
 
 
 def test_execution_is_off_by_default_with_a_timeout():

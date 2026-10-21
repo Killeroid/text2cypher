@@ -22,12 +22,15 @@ class Attempt:
         validation: How the query was validated, or ``None`` for an empty query.
         schema_scope: The schema the query was written for: ``"filtered"`` or ``"full"``.
         usage: The tokens the call that wrote the query used, if the client reported them.
+        execution_error: What FalkorDB said when it ran the query and failed, if execution is
+            on and the query was run; the next attempt then corrects it.
     """
 
     query: str
     validation: ValidationResult | None
     schema_scope: SchemaScope
     usage: Usage | None
+    execution_error: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,13 +53,16 @@ class Records:
 class Result:
     """What came of one question: every attempt, in order, and how it ended.
 
-    ``valid``: the last query passed validation. ``unanswerable``: the LLM declined,
-    so there is no query. ``failed``: the corrections ran out; the last attempt has
-    the last query and its issues.
+    ``valid``: the last query passed validation (and ran, if execution is on).
+    ``unanswerable``: the LLM declined, so there is no query. ``failed``: the corrections
+    ran out; the last attempt has the last query and its issues, or the error FalkorDB
+    gave when it ran it.
 
-    When execution is on and the status is ``valid``, ``records`` has what the query
-    returned, or ``execution_error`` says why FalkorDB did not run it (the status
-    stays ``valid``: the query passed validation).
+    When execution is on, a query that FalkorDB rejects or fails is corrected like one
+    that fails validation. The status is ``valid`` with ``records`` when a query runs,
+    and with ``execution_error`` when a timeout or a lost connection stops it (that says
+    nothing about the query). It is ``failed`` when the corrections run out on queries
+    that FalkorDB fails.
 
     A result is hashable unless it holds ``records``, whose values are the client's own
     objects.

@@ -4,7 +4,8 @@ from typing import Any, cast
 
 from cypher_guardrail import issues as cg
 
-from text2cypher import GraphSchema, Issue, ValidationResult
+from text2cypher import GraphSchema, Issue, Records, ValidationResult
+from text2cypher._execution import Execution
 from text2cypher.schema import Path
 
 # A small schema, built by hand: (:Person {name})-[:ACTED_IN]->(:Movie {title})
@@ -46,3 +47,24 @@ class ScriptedValidator:
     async def __call__(self, query: str) -> ValidationResult:
         self.queries.append(query)
         return next(self._results)
+
+
+ROWS = Records(("x",), ((1,),))
+RAN = Execution(records=ROWS)
+
+
+def failed_to_run(error: str) -> Execution:
+    """FalkorDB failed the query: another query may not fail."""
+    return Execution(error=error, correctable=True)
+
+
+class ScriptedExecutor:
+    """Answers each run with the next canned execution, and records the queries."""
+
+    def __init__(self, *executions: Execution) -> None:
+        self._executions = iter(executions)
+        self.queries: list[str] = []
+
+    async def __call__(self, query: str) -> Execution:
+        self.queries.append(query)
+        return next(self._executions)

@@ -128,3 +128,46 @@ def test_the_note_goes_before_the_attempts_in_one_message():
 
 def test_without_rounds_one_message_is_the_question():
     assert folded_message("q", [], SCHEMA) == "Question: q"
+
+
+def test_a_query_that_failed_when_it_ran_is_followed_by_the_error_and_a_closing_for_it():
+    failed = Round("MATCH (m:Movie) RETURN m.year % 0", (), "Division by zero")
+
+    messages = chat_messages("How old?", [failed], SCHEMA)
+
+    assert messages == [
+        Message("user", "Question: How old?"),
+        Message("assistant", "```cypher\nMATCH (m:Movie) RETURN m.year % 0\n```"),
+        Message(
+            "user",
+            "FalkorDB accepted this query but it failed when it ran:\n\n"
+            "Division by zero\n\n"
+            "Write a corrected query that fixes this and keeps what already works. "
+            "Reply with the query in one ```cypher code block and nothing else. "
+            "If the question cannot be answered with this schema, reply with an empty "
+            "code block.",
+        ),
+    ]
+
+
+def test_each_kind_of_failure_gets_its_own_turn_in_a_conversation_of_both():
+    ran = Round("MATCH (m:Movie) RETURN m.year % 0", (), "Division by zero")
+
+    messages = chat_messages("q", [PERSN, ran], SCHEMA)
+
+    assert messages[2].content.startswith("This query has problems:")
+    assert "fixes the problems" in messages[2].content
+    assert messages[4].content.startswith("FalkorDB accepted this query")
+    assert "fixes this and" in messages[4].content
+
+
+def test_a_failure_to_run_is_listed_with_the_attempts_in_one_message():
+    ran = Round("MATCH (m:Movie) RETURN m.year % 0", (), "Division by zero")
+
+    message = folded_message("q", [PERSN, ran], SCHEMA)
+
+    assert (
+        "Attempt 2\n```cypher\nMATCH (m:Movie) RETURN m.year % 0\n```\n"
+        "FalkorDB accepted this query but it failed when it ran:\n\n"
+        f"Division by zero\n\n{CLOSING}"
+    ) in message

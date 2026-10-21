@@ -28,7 +28,7 @@ The loop is driven by explicit counters, not by inspecting a history list:
    and its issues.
 
 The first query is not a correction: the LLM is asked at most `total_attempts + 1` times (plus one retry on the
-full schema if it declines on the filtered one). Defaults are 3 and 5.
+full schema if it declines on the filtered one). Defaults are 5 and 10.
 
 ## Principles
 
@@ -277,13 +277,23 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 - `execute_cypher(graph, query, *, timeout_ms=None) -> Records` runs `ro_query` with a timeout: 10 s by default
   (`Config.execute_timeout_ms`), `None` for no limit, because a generated query can be expensive and an unlimited
   default would let one hang the caller.
-- Only a `valid` result is executed, after the workflow. `Result.records` is `Records(columns, rows)`, with the
-  client's own values (`Node`, `Edge`, `Path`). Any `redis.exceptions.RedisError` (a rejected or failed query, a
-  timeout, a lost connection) goes to `Result.execution_error` and the status stays `valid`, so the LLM calls are
-  never lost; anything else is a bug and propagates.
-- A runtime failure is not fed back to the corrector: it would change how corrections are counted, and the
-  validator already catches most such errors. There is no cap on returned rows: the timeout bounds time, not
-  memory, and a result-size limit belongs on the server.
+- Execution is part of the loop (`run_workflow(..., execute=...)`): a query that passed validation is run at once.
+  `run_query(graph, query, *, timeout_ms)` returns an `Execution(records, error, correctable)`: any
+  `redis.exceptions.RedisError` becomes an `error` string and anything else is a bug and propagates.
+  `Result.records` is `Records(columns, rows)`, with the client's own values (`Node`, `Edge`, `Path`).
+- `correctable` is true for a `ResponseError` that is not a timeout (FalkorDB rejected or failed this query: a type
+  error on a value, a division by zero, a bad argument). Checked on FalkorDB with queries that pass both validators
+  (`substring(name, -1)`, `year % 0`, `name / 2`). Its message becomes the next turn of the conversation
+  ("FalkorDB accepted this query but it failed when it ran: ...", the error unchanged, then an instruction ending
+  "fixes this and keeps what already works"), costs a correction from `total_attempts`, and is on the attempt as
+  `execution_error`. When the corrections run out on such queries the status is `failed` (no query both validated
+  and ran), with `Result.execution_error` the last error; before, it stayed `valid`.
+- A timeout (also a `ResponseError`, recognised by "timed out", which a test pins on the real server) and a lost
+  connection are not correctable: they say nothing about the query, and a rewrite would not help. The loop ends with
+  `valid`, the query and `Result.execution_error`, so the LLM calls are never lost.
+- An empty result is not an error and is never corrected. FalkorDB's error text can quote a value from the data and
+  goes to the LLM, which the docs say. There is no cap on returned rows: the timeout bounds time, not memory, and a
+  result-size limit belongs on the server.
 
 ## Tooling and constraints
 
@@ -359,6 +369,6 @@ Each item says what would bring it back.
 **Other**
 - Embedding similarity for the lexical filter (a heavy dependency, would be an extra) and property-name matching:
   when the filter's miss rate justifies them.
-- Feeding a runtime failure or an empty result back to the corrector; a row limit; converting rows to plain Python.
+- Feeding an empty result back to the LLM; a row limit; converting rows to plain Python.
 - Metrics for the harness: success rate, self-healing rate (failures fixed by a correction), validation failures
   by type.

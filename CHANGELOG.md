@@ -11,6 +11,12 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Changed
 
+- The default limits are higher: `attempts_w_filtered=5` (was 3) and `total_attempts=10` (was 5). A question that cannot be fixed now costs up to 11 LLM calls (was 6) before it ends as `failed`.
+  Pass `Config(attempts_w_filtered=3, total_attempts=5)` for the old limits.
+- With `Config(execute=True)`, a query that FalkorDB rejects or fails when it runs (a type error on a value, a division by zero) is no longer returned as `valid` with `execution_error`: the error is sent
+  back to the LLM as the next turn, and the corrected query is validated and run, which costs a correction like any other. When the corrections run out on such queries the status is now `failed`.
+  A timeout or a lost connection still ends the run as `valid` with `execution_error`, because it says nothing about the query. `Attempt.execution_error` has the error of each attempt. FalkorDB's error
+  message is sent to the LLM and can name a value from your data.
 - The system prompt asks the LLM to check its query before it answers: valid syntax, every name in the schema, the direction of every relationship, read-only, and only what the question asks for. Whether it
   saves corrections has not been measured: both test graphs were already at the ceiling. With `use_parameters` it also checks that every `$parameter` has a value in the `CYPHER`
   header, and the format example in the prompt is shown with a header, so it no longer contradicts the rule.

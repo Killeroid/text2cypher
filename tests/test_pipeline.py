@@ -198,7 +198,7 @@ async def test_a_lost_connection_during_execution_does_not_lose_the_result(
     async def connection_lost(*args: object, **kwargs: object):
         raise RedisConnectionError("connection lost")
 
-    monkeypatch.setattr("text2cypher._pipeline.execute_cypher", connection_lost)
+    monkeypatch.setattr("text2cypher._execution.execute_cypher", connection_lost)
     llm = FakeLLM([reply("MATCH (p:Person) RETURN p.name")])
 
     result = await Text2Cypher(falkordb_client, llm, config=Config(execute=True)).run(
@@ -219,7 +219,7 @@ async def test_a_programming_error_during_execution_is_not_swallowed(
     async def broken(*args: object, **kwargs: object):
         raise TypeError("a bug")
 
-    monkeypatch.setattr("text2cypher._pipeline.execute_cypher", broken)
+    monkeypatch.setattr("text2cypher._execution.execute_cypher", broken)
     llm = FakeLLM([reply("MATCH (p:Person) RETURN p.name")])
 
     with pytest.raises(TypeError, match="a bug"):
@@ -456,3 +456,55 @@ async def test_a_query_with_a_parameter_header_is_validated_and_executed(
     assert result.records is not None
     assert result.records.rows == (("Keanu",),)
     assert "CYPHER header" in llm.calls[0].system
+
+
+async def test_a_query_that_fails_on_the_database_is_corrected_with_the_error(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    llm = FakeLLM(
+        [
+            reply("MATCH (m:Movie) RETURN m.year % 0"),
+            reply("MATCH (m:Movie) RETURN m.year % 100"),
+        ]
+    )
+
+    result = await Text2Cypher(falkordb_client, llm, config=Config(execute=True)).run(
+        "What is the year modulo 100?", movies_graph
+    )
+
+    assert result.status == "valid"
+    assert result.query == "MATCH (m:Movie) RETURN m.year % 100"
+    assert result.records is not None
+    assert result.records.rows == ((99,),)
+    assert [a.execution_error for a in result.attempts] == ["Division by zero", None]
+    # the model is told what the database said, after the query it wrote
+    assert [m.role for m in llm.calls[1].messages] == ["user", "assistant", "user"]
+    assert "failed when it ran:\n\nDivision by zero" in llm.calls[1].user
+
+
+async def test_without_execution_a_query_that_would_fail_on_the_database_is_valid(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    llm = FakeLLM([reply("MATCH (m:Movie) RETURN m.year % 0")])
+
+    result = await Text2Cypher(falkordb_client, llm).run("Q", movies_graph)
+
+    assert result.status == "valid"
+    assert len(llm.calls) == 1
+
+
+async def test_a_query_that_keeps_failing_on_the_database_ends_as_failed(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    llm = FakeLLM([reply("MATCH (m:Movie) RETURN m.year % 0")] * 2)
+
+    result = await Text2Cypher(
+        falkordb_client,
+        llm,
+        config=Config(execute=True, attempts_w_filtered=1, total_attempts=1),
+    ).run("Q", movies_graph)
+
+    assert result.status == "failed"
+    assert result.records is None
+    assert result.execution_error == "Division by zero"
+    assert len(result.attempts) == 2

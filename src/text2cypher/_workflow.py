@@ -4,6 +4,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
 
 from text2cypher._config import Config
+from text2cypher._execution import Execution
 from text2cypher._generation import Round, generate_cypher
 from text2cypher._results import Attempt, Result, SchemaScope
 from text2cypher._validation import ValidationResult
@@ -19,6 +20,7 @@ async def run_workflow(
     validate: Callable[[str], Awaitable[ValidationResult]],
     config: Config,
     schema_filter: SchemaFilter | None = None,
+    execute: Callable[[str], Awaitable[Execution]] | None = None,
 ) -> Result:
     """Answer ``question`` with a query that passes ``validate``, if one can be found.
 
@@ -33,6 +35,12 @@ async def run_workflow(
 
     Each correction is a request that carries every query written so far with what was
     wrong with it, so the LLM does not repeat a mistake it was told about.
+
+    With ``execute``, a query that passed validation is run. If FalkorDB rejects or fails
+    it, that is what the next correction is told, and it costs a correction like any
+    other; when the corrections run out the result is ``failed``. A timeout or a lost
+    connection ends the loop with the valid query and the error, as they say nothing
+    about the query.
     """
     filtered = None if schema_filter is None else schema_filter(schema, question)
     if filtered == schema:
@@ -60,13 +68,18 @@ async def run_workflow(
             continue
 
         validation = await validate(generation.query)
-        attempts.append(Attempt(generation.query, validation, scope, generation.usage))
-        if validation.valid:
-            return Result(question, "valid", tuple(attempts))
+        ran = Execution()
+        if validation.valid and execute is not None:
+            ran = await execute(generation.query)
+        attempts.append(
+            Attempt(generation.query, validation, scope, generation.usage, ran.error)
+        )
+        if validation.valid and not ran.correctable:
+            return Result(question, "valid", tuple(attempts), ran.records, ran.error)
         if corrections == config.total_attempts:
-            return Result(question, "failed", tuple(attempts))
+            return Result(question, "failed", tuple(attempts), None, ran.error)
         corrections += 1
-        rounds.append(Round(generation.query, validation.issues))
+        rounds.append(Round(generation.query, validation.issues, ran.error))
 
 
 def _choose_schema(

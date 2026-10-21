@@ -76,9 +76,9 @@ agent = Text2Cypher(client, llm, config=Config(attempts_w_filtered=2, total_atte
 
 | Field | Default | Meaning |
 |---|---|---|
-| `attempts_w_filtered` | `3` | Corrections made with the filtered schema. |
-| `total_attempts` | `5` | Corrections in all, filtered and full. The first query is not a correction, so the LLM is asked at most `total_attempts + 1` times (plus one retry on the full schema if it declines on the filtered one). |
-| `execute` | `False` | Run the final query, see below. |
+| `attempts_w_filtered` | `5` | Corrections made with the filtered schema. |
+| `total_attempts` | `10` | Corrections in all, filtered and full. The first query is not a correction, so the LLM is asked at most `total_attempts + 1` times (plus one retry on the full schema if it declines on the filtered one). |
+| `execute` | `False` | Run a query that passed validation, and correct it if FalkorDB fails it; see below. |
 | `execute_timeout_ms` | `10000` | Stop an execution after this many milliseconds; `None` for no limit. |
 | `check_types` | `True` | Report a property compared with a value of another type, and `sum`, `avg` and the like of a property that holds no numbers. See [](checks.md). |
 | `check_performance` | `False` | Report a cartesian product, a scan of every node and a path with no upper bound. See [](checks.md). |
@@ -89,7 +89,7 @@ agent = Text2Cypher(client, llm, config=Config(attempts_w_filtered=2, total_atte
 
 ## Running the query
 
-With `Config(execute=True)` a `valid` query is also run, read-only (FalkorDB itself rejects a write), and the rows are on the result:
+With `Config(execute=True)` a query that passed validation is also run, read-only (FalkorDB itself rejects a write), and the rows are on the result:
 
 ```python
 agent = Text2Cypher(client, llm, config=Config(execute=True))
@@ -100,13 +100,15 @@ print(result.records.rows)  # (('Keanu Reeves',), ('Carrie-Anne Moss',))
 print(result.execution_error)  # None
 ```
 
-If FalkorDB rejects or fails the query, it runs past the timeout, or it cannot be reached, the message is in `result.execution_error` and the status stays `valid`: the query did pass the checks, and the LLM calls you paid for are not lost. Run `result.query` yourself or try again. Queries that are `unanswerable` or `failed` are never run. Values in the rows are the client's own objects (a node stays a `falkordb` `Node`).
+If FalkorDB rejects or fails the query (a type error on a value, a division by zero, a bad argument to a function: what the validators cannot see before it runs), the error is sent back to the LLM for a correction, as the next turn of the conversation, and the corrected query is validated and run in turn. This costs a correction like any other, so it uses the same `total_attempts`. If the corrections run out on queries that FalkorDB fails, the status is `failed`, `result.query` is the last query, and `result.execution_error` is the last error (each attempt has its own in `attempt.execution_error`).
+
+If the query runs past the timeout, or FalkorDB cannot be reached, the message is in `result.execution_error` and the status stays `valid`: the query did pass the checks, that says nothing about the query, and the LLM calls you paid for are not lost. Run `result.query` yourself or try again. Queries that are `unanswerable` are never run. Values in the rows are the client's own objects (a node stays a `falkordb` `Node`). An error message from FalkorDB can name a value from your data, and it is sent to the LLM; the rows are not.
 
 ## Errors
 
 * {py:class}`~text2cypher.GraphNotFoundError` (a `ValueError`): the graph does not exist, or has no labelled nodes or relationships. Raised by `run` before any LLM call, so a typo in the graph name costs nothing.
 * Errors from your LLM client, and from the database while reading the schema or validating, are not caught: they reach you as they are.
-* Errors while executing the final query are recorded in `result.execution_error`, as above.
+* A timeout or a lost connection while executing is recorded in `result.execution_error`, as above; an error from FalkorDB about the query is corrected, as above.
 
 ## Try it without a server or a model
 

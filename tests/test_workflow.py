@@ -1,9 +1,20 @@
 from dataclasses import replace
 
 import pytest
-from support import FILM_SCHEMA, VALID, ScriptedValidator, invalid, reply
+from support import (
+    FILM_SCHEMA,
+    RAN,
+    ROWS,
+    VALID,
+    ScriptedExecutor,
+    ScriptedValidator,
+    failed_to_run,
+    invalid,
+    reply,
+)
 
 from text2cypher._config import Config
+from text2cypher._execution import Execution
 from text2cypher._generation import Round, generate_cypher
 from text2cypher._generation.conversation import SCHEMA_NOTE, chat_messages
 from text2cypher._generation.prompts import generator_system, generator_user
@@ -435,3 +446,152 @@ async def test_a_declined_reply_is_not_part_of_the_conversation_that_is_asked_ag
 
     assert len(llm.calls[2].messages) == len(llm.calls[1].messages)
     assert [m.role for m in llm.calls[2].messages] == ["user", "assistant", "user"]
+
+
+async def test_a_query_that_passed_validation_is_run_and_its_rows_are_the_result():
+    execute = ScriptedExecutor(RAN)
+
+    result = await run_workflow(
+        "Q",
+        FULL,
+        llm=FakeLLM([reply("a")]),
+        validate=ScriptedValidator(VALID),
+        config=Config(),
+        execute=execute,
+    )
+
+    assert result.status == "valid"
+    assert result.records == ROWS
+    assert result.execution_error is None
+    assert execute.queries == ["a"]
+
+
+async def test_a_query_is_not_run_when_it_did_not_pass_validation():
+    execute = ScriptedExecutor(RAN)
+
+    await run_workflow(
+        "Q",
+        FULL,
+        llm=FakeLLM([reply("a"), reply("b")]),
+        validate=ScriptedValidator(invalid("x"), VALID),
+        config=Config(),
+        execute=execute,
+    )
+
+    assert execute.queries == ["b"]
+
+
+async def test_a_query_that_fails_when_run_is_corrected_with_what_failed():
+    llm = FakeLLM([reply("a"), reply("b")])
+    execute = ScriptedExecutor(failed_to_run("Division by zero"), RAN)
+
+    result = await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(VALID, VALID),
+        config=Config(),
+        execute=execute,
+    )
+
+    assert result.status == "valid"
+    assert result.records == ROWS
+    assert [a.execution_error for a in result.attempts] == ["Division by zero", None]
+    assert result.execution_error is None
+    assert execute.queries == ["a", "b"]
+    assert list(llm.calls[1].messages) == chat_messages(
+        "Q", [Round("a", (), "Division by zero")], FULL
+    )
+
+
+async def test_a_failure_to_run_after_a_failure_to_validate_is_corrected_the_same_way():
+    problem = invalid("The label X is not in the graph.")
+    llm = FakeLLM([reply("a"), reply("b"), reply("c")])
+
+    result = await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(problem, VALID, VALID),
+        config=Config(),
+        execute=ScriptedExecutor(failed_to_run("boom"), RAN),
+    )
+
+    assert result.status == "valid"
+    assert list(llm.calls[2].messages) == chat_messages(
+        "Q", [Round("a", problem.issues), Round("b", (), "boom")], FULL
+    )
+
+
+async def test_a_correction_after_a_failure_to_run_counts_like_any_other():
+    llm = FakeLLM([reply("a"), reply("b"), reply("never asked")])
+    execute = ScriptedExecutor(failed_to_run("one"), failed_to_run("two"))
+
+    result = await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(VALID, VALID),
+        config=Config(attempts_w_filtered=1, total_attempts=1),
+        execute=execute,
+    )
+
+    # when the corrections run out on queries FalkorDB fails, no query both validated and ran
+    assert result.status == "failed"
+    assert result.query == "b"
+    assert result.records is None
+    assert result.execution_error == "two"
+    assert [a.execution_error for a in result.attempts] == ["one", "two"]
+    assert len(llm.calls) == 2
+
+
+async def test_a_timeout_or_a_lost_connection_ends_the_loop_with_the_valid_query():
+    llm = FakeLLM([reply("a"), reply("never asked")])
+
+    result = await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(VALID),
+        config=Config(),
+        execute=ScriptedExecutor(Execution(error="Query timed out")),
+    )
+
+    assert result.status == "valid"
+    assert result.query == "a"
+    assert result.records is None
+    assert result.execution_error == "Query timed out"
+    assert len(llm.calls) == 1
+
+
+async def test_nothing_is_run_without_an_executor():
+    result = await run_workflow(
+        "Q",
+        FULL,
+        llm=FakeLLM([reply("a")]),
+        validate=ScriptedValidator(VALID),
+        config=Config(),
+    )
+
+    assert result.records is None
+    assert result.execution_error is None
+
+
+async def test_a_failure_to_run_on_the_filtered_schema_can_move_on_to_the_full_one():
+    llm = FakeLLM([reply("a"), reply("b")])
+
+    await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(VALID, VALID),
+        config=Config(attempts_w_filtered=0, total_attempts=2),
+        schema_filter=lambda schema, question: FILTERED,
+        execute=ScriptedExecutor(failed_to_run("boom"), RAN),
+    )
+
+    assert [c.system for c in llm.calls] == [
+        generator_system(FILTERED),
+        generator_system(FULL),
+    ]
+    assert llm.calls[1].messages[-1].content.startswith(SCHEMA_NOTE)
