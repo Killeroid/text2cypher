@@ -27,6 +27,9 @@ The loop is driven by explicit counters, not by inspecting a history list:
 4. Continue until `total_attempts` corrections, then return a `failed` Result that still carries the last query
    and its issues.
 
+With `Config.autofix_typos`, step 2 has a stage before a correction is asked for (see Typos). With `Config.execute`, a
+query that has no issues is run, and a failure of the database is a correction too (see Execution).
+
 The first query is not a correction: the LLM is asked at most `total_attempts + 1` times (plus one retry on the
 full schema if it declines on the filtered one). Defaults are 5 and 10.
 
@@ -58,7 +61,7 @@ full schema if it declines on the filtered one). Defaults are 5 and 10.
 Public API: what `text2cypher`, `text2cypher.llm` and `text2cypher.schema` list in `__all__`, pinned by
 `tests/test_public_api.py`, which also fails if a module outside them lacks a leading underscore. Everything
 else is internal. Dependencies point down, and `import-linter` enforces it in CI: `_pipeline` -> `_workflow` ->
-(`_generation`, `_execution`, `_schema_source`) -> `_results` -> `_validation` -> (`llm`, `schema`, `_config`, `_errors`),
+(`_generation`, `_execution`, `_schema_source`) -> `_examples` -> `_results` -> `_validation` -> (`llm`, `schema`, `_config`, `_errors`),
 and the package never imports `evals`. Each type lives with its domain (there is no shared `types` module).
 
 ```
@@ -83,7 +86,8 @@ src/text2cypher/
 └── _generation/
     ├── prompts.py       generator system prompt (rules built from lists) and the question message
     ├── conversation.py  Round, the turns of a conversation (chat_messages) and the same as one message (folded_message)
-    ├── problems.py      the issues of a query worded for the LLM, one handler per issue code
+    ├── problems.py      the issues of a query worded for the LLM, one handler per issue code; likely_typos
+    ├── typos.py         fix_typos: replace a misspelled name in a query with the name it is a typo of
     ├── extract.py       extract_cypher: first fenced block, else the trimmed reply
     └── generate.py      generate_cypher (a first query or a correction), Generation
 tests/                   mirrors src/: llm/ schema/ validation/ generation/ trial/, and test_workflow,
@@ -290,6 +294,33 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   `suggested_path` unless the description already has it. An unknown-property issue is dropped when a label issue names
   the same property. Anything else keeps the description.
 
+### Typos (`_generation/typos.py`)
+
+- `Config.autofix_typos` (off). After a query fails validation, `fix_typos(query, issues, schema)` replaces each label,
+  relationship type and property that the validators report as unknown (`UnknownLabel`, `UnknownRelationshipType`,
+  `UnknownPropertyKey`) by the one name of the graph it is a likely typo of. Such a name exists nowhere in the graph, so
+  every use of it is wrong and each is replaced; nothing needs to know which variable it belongs to. A property that
+  exists on another label (`InvalidPropertyAccess`) is not touched, because the variable it belongs to is not known.
+- The rule for "a likely typo" is the one behind the "did you mean" (`likely_typos` in `problems.py`: very similar, or
+  fairly similar and starting alike; `Client` is not `City`), and a name is fixed only when **exactly one** name of the
+  schema passes it, so an ambiguous one (`Persn` with `Person` and `Persons`) is left. Candidates come from the full
+  schema, because the query is validated against the whole graph. A case difference counts (`person` is `Person`).
+- The rewrite works on the code of the query only: strings, line comments and block comments are cut out first and put
+  back. A label or type follows a colon (or a bar: `[:A|B]`), a property follows a dot (not before an open
+  parenthesis) or is a key before a colon, and backticks around the old name go with it. The new name is quoted only when
+  it needs it.
+- The fixed query is validated again, and fixing is tried up to three times, because a wrong label stops the
+  validators from checking its properties: they show only once the labels are right (checked on FalkorDB: a query with
+  `Persn`, `ACTD_IN`, `Movi`, `nme` and `titel` needs two). It is kept only if it ends up passing. If it does not,
+  it is dropped and the LLM gets the query it wrote, with the problems it had, as without the option, so a fix can only save a
+  call.
+- A fix is an `Attempt` of its own after the query the LLM wrote (`auto_fixed=True`, `usage=Usage(0, 0)`: a zero,
+  because `None` would make `Result.usage` unknown), so both the original and the fixed query are on the result. It is
+  not a request, so it is free: it does not count against `total_attempts`, and a query can be valid with
+  `total_attempts=0`. The fixed query is the one that is executed, if execution is on.
+- Off by default because a fix can make a query valid and still not what the question meant (a typo of `Person` that was
+  meant to be `Persona`, or a property of the wrong label that happens to be right on another).
+
 ### Execution (`_execution.py`)
 
 - Off by default (`Config.execute = False`).
@@ -365,8 +396,6 @@ Each item says what would bring it back.
 - **LLM-based schema filtering**: the LLM picks the relevant labels, relationship types and properties, behind the
   same `SchemaFilter` interface so strategies can be compared. It needs an async filter type. Trigger: a measured
   filtered-schema miss rate on a large graph that the lexical filter's full-schema fallback does not absorb.
-- **Auto-fix of simple typos without the LLM** (it changes how attempts are counted). The corrector wording itself is
-  built; see Generation.
 - **Whether structured issues can inform escalation**: an unknown label that exists nowhere in the graph will not
   be fixed by the full schema. Untested.
 - A sync facade, if demand appears (see Async only).

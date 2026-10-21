@@ -24,6 +24,9 @@ class Attempt:
         usage: The tokens the call that wrote the query used, if the client reported them.
         execution_error: What FalkorDB said when it ran the query and failed, if execution is
             on and the query was run; the next attempt then corrects it.
+        auto_fixed: The query is the one before it with misspelled names replaced, without
+            the LLM (``Config.autofix_typos``). It cost no tokens, and it was not written by
+            a request, so it is not a correction.
     """
 
     query: str
@@ -31,6 +34,7 @@ class Attempt:
     schema_scope: SchemaScope
     usage: Usage | None
     execution_error: str | None = None
+    auto_fixed: bool = False
 
 
 @dataclass(frozen=True, slots=True)

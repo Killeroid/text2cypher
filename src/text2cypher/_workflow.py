@@ -5,11 +5,15 @@ from dataclasses import replace
 
 from text2cypher._config import Config
 from text2cypher._execution import Execution
-from text2cypher._generation import Round, generate_cypher
+from text2cypher._generation import Generation, Round, fix_typos, generate_cypher
 from text2cypher._results import Attempt, Result, SchemaScope
 from text2cypher._validation import ValidationResult
-from text2cypher.llm import AsyncChatClient, AsyncLLMClient
+from text2cypher.llm import AsyncChatClient, AsyncLLMClient, Usage
 from text2cypher.schema import GraphSchema, SchemaFilter
+
+# A wrong label stops the validators from checking its properties, so a query with both can
+# need a second round of fixes; a third is for the rare case of another layer
+_FIX_ROUNDS = 3
 
 
 async def run_workflow(
@@ -67,19 +71,22 @@ async def run_workflow(
             escalated = True
             continue
 
-        validation = await validate(generation.query)
+        checked, validation = await _check(
+            generation, scope, validate, schema, autofix=config.autofix_typos
+        )
+        query = checked[-1].query
         ran = Execution()
         if validation.valid and execute is not None:
-            ran = await execute(generation.query)
-        attempts.append(
-            Attempt(generation.query, validation, scope, generation.usage, ran.error)
+            ran = await execute(query)
+        attempts.extend(
+            (*checked[:-1], replace(checked[-1], execution_error=ran.error))
         )
         if validation.valid and not ran.correctable:
             return Result(question, "valid", tuple(attempts), ran.records, ran.error)
         if corrections == config.total_attempts:
             return Result(question, "failed", tuple(attempts), None, ran.error)
         corrections += 1
-        rounds.append(Round(generation.query, validation.issues, ran.error))
+        rounds.append(Round(query, validation.issues, ran.error))
 
 
 def _choose_schema(
@@ -99,6 +106,40 @@ def _choose_schema(
     ):
         return "filtered", filtered
     return "full", schema
+
+
+async def _check(
+    generation: Generation,
+    scope: SchemaScope,
+    validate: Callable[[str], Awaitable[ValidationResult]],
+    schema: GraphSchema,
+    *,
+    autofix: bool,
+) -> tuple[list[Attempt], ValidationResult]:
+    """The attempt for the query the LLM wrote, validated, and the validation that counts.
+
+    With ``autofix``, a query that did not pass gets its misspelled names replaced
+    (without the LLM, with the full schema) and is validated again, up to a few times
+    because fixing one kind of name can show another. If it passes, it follows as an
+    attempt of its own and its validation is the one that counts; if it never does, it
+    is dropped and the query the LLM wrote stands.
+    """
+    validation = await validate(generation.query)
+    attempt = Attempt(generation.query, validation, scope, generation.usage)
+    if validation.valid or not autofix:
+        return [attempt], validation
+    query, now = generation.query, validation
+    for _ in range(_FIX_ROUNDS):
+        if (fixed := fix_typos(query, now.issues, schema)) is None:
+            break
+        query, now = fixed, await validate(fixed)
+        if now.valid:
+            # Nothing was asked of the LLM, so it cost no tokens (a zero, not an unknown)
+            return [
+                attempt,
+                Attempt(query, now, scope, Usage(0, 0), auto_fixed=True),
+            ], now
+    return [attempt], validation
 
 
 def _with_schema_note(

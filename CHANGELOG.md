@@ -6,6 +6,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Added
 
+- `Config(autofix_typos=True)` (off by default): a label, relationship type or property that the validators report as unknown is replaced, without the LLM, by the one name of the graph it is a likely typo of
+  (never inside a string or a comment), and the query is validated again, up to three times. If it passes it is the answer, at no cost in LLM calls or corrections; if not, it is dropped and the LLM corrects
+  the query it wrote. `Attempt.auto_fixed` marks the fixed attempt, which has `Usage(0, 0)`.
 - `Config(example_values=3)`: the schema the LLM is shown has up to three example values of each property of a plain type (`title: STRING (e.g. 'Alien', 'Heat')`), so it writes a value the way the graph does,
   and the prompt gets a rule to do so. **They are rows of your graph and go to the LLM provider: pass `example_values=0` to send none.** They are read with one small read-only query per property (with a timeout),
   once for each structure of the graph. `GraphSchema.node_examples` and `relationship_examples` hold them.

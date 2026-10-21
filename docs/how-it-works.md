@@ -45,6 +45,10 @@ When there are problems, the LLM is asked again with the same system message and
 
 The first `attempts_w_filtered` corrections use the filtered schema, the later ones the full schema, until `total_attempts` corrections have been made. The first query is not a correction. When the schema changes from the filtered to the full one, the conversation goes on with the earlier turns, and the first message after the change says that the schema now lists the whole graph.
 
+### Fixing typos without the LLM
+
+With `Config(autofix_typos=True)`, a query that fails validation because it misspells a label, a relationship type or a property (`Persn` for `Person`, `nme` for `name`) is fixed first, without asking the LLM again. Each misspelled name that is a likely typo of exactly one name in your graph is replaced (never inside a string or a comment), and the query is validated again, up to three times: a wrong label hides problems with its properties until it is right. If the fixed query passes, it is the answer. It costs no LLM call and no correction, and the result lists both the query the LLM wrote and the fixed one (`attempt.auto_fixed`). If it does not pass, it is thrown away and the LLM is asked to correct the query it wrote, as usual. A property that exists on another label is never touched. It is off by default, because a fix can pass validation and still not be what the question meant.
+
 ## When the LLM declines
 
 An empty answer means the LLM sees no way to answer the question with the schema it was given. With a filtered schema that may be the filter's doing, so the same request is made again, once, with the full schema, and it does not use up a correction. An empty answer on the full schema ends the loop with `unanswerable`. An empty query is never validated.

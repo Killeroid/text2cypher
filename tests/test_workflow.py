@@ -10,6 +10,7 @@ from support import (
     ScriptedValidator,
     failed_to_run,
     invalid,
+    misspelled,
     reply,
 )
 
@@ -595,3 +596,170 @@ async def test_a_failure_to_run_on_the_filtered_schema_can_move_on_to_the_full_o
         generator_system(FULL),
     ]
     assert llm.calls[1].messages[-1].content.startswith(SCHEMA_NOTE)
+
+
+TYPO = "MATCH (p:Persn) RETURN p.name"
+FIXED = "MATCH (p:Person) RETURN p.name"
+
+
+async def test_a_typo_is_fixed_without_the_llm_and_costs_no_correction():
+    llm = FakeLLM([Completion(reply(TYPO), Usage(10, 4))])
+    validate = ScriptedValidator(misspelled(label="Persn"), VALID)
+
+    result = await run_workflow(
+        "Who?",
+        FULL,
+        llm=llm,
+        validate=validate,
+        config=Config(attempts_w_filtered=0, total_attempts=0, autofix_typos=True),
+    )
+
+    assert result.status == "valid"
+    assert result.query == FIXED
+    assert validate.queries == [TYPO, FIXED]
+    assert len(llm.calls) == 1
+    # the query the LLM wrote and the one that was fixed are both there, and the fix cost nothing
+    assert [(a.query, a.auto_fixed) for a in result.attempts] == [
+        (TYPO, False),
+        (FIXED, True),
+    ]
+    assert result.attempts[0].validation == misspelled(label="Persn")
+    assert result.attempts[1].validation == VALID
+    assert result.attempts[1].usage == Usage(0, 0)
+    assert result.usage == Usage(10, 4)
+
+
+async def test_a_typo_is_not_fixed_unless_asked():
+    llm = FakeLLM([reply(TYPO), reply(FIXED)])
+    validate = ScriptedValidator(misspelled(label="Persn"), VALID)
+
+    result = await run_workflow(
+        "Who?", FULL, llm=llm, validate=validate, config=Config()
+    )
+
+    assert validate.queries == [TYPO, FIXED]
+    assert len(llm.calls) == 2
+    assert [a.auto_fixed for a in result.attempts] == [False, False]
+
+
+async def test_a_fix_that_does_not_pass_is_dropped_and_the_llm_gets_the_query_it_wrote():
+    llm = FakeLLM([reply(TYPO), reply("MATCH (p:Person) RETURN p")])
+    validate = ScriptedValidator(
+        misspelled(label="Persn"), invalid("still wrong"), VALID
+    )
+
+    result = await run_workflow(
+        "Who?",
+        FULL,
+        llm=llm,
+        validate=validate,
+        config=Config(autofix_typos=True),
+    )
+
+    assert result.status == "valid"
+    assert validate.queries == [TYPO, FIXED, "MATCH (p:Person) RETURN p"]
+    assert [a.query for a in result.attempts] == [TYPO, "MATCH (p:Person) RETURN p"]
+    assert not any(a.auto_fixed for a in result.attempts)
+    # the correction is about the query the LLM wrote, with the problems it had
+    assert list(llm.calls[1].messages) == chat_messages(
+        "Who?", [Round(TYPO, misspelled(label="Persn").issues)], FULL
+    )
+
+
+async def test_a_problem_that_is_not_a_typo_goes_to_the_llm_without_a_fix_being_tried():
+    llm = FakeLLM(
+        [reply("MATCH (r:Robot) RETURN r"), reply("MATCH (p:Person) RETURN p")]
+    )
+    validate = ScriptedValidator(invalid("The label Robot is not in the graph."), VALID)
+
+    await run_workflow(
+        "Who?",
+        FULL,
+        llm=llm,
+        validate=validate,
+        config=Config(autofix_typos=True),
+    )
+
+    assert validate.queries == ["MATCH (r:Robot) RETURN r", "MATCH (p:Person) RETURN p"]
+
+
+async def test_a_fixed_query_is_the_one_that_is_run_and_corrected_if_it_fails_to_run():
+    llm = FakeLLM([reply(TYPO), reply("MATCH (p:Person) RETURN p.born")])
+    execute = ScriptedExecutor(failed_to_run("boom"), RAN)
+
+    result = await run_workflow(
+        "Who?",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(misspelled(label="Persn"), VALID, VALID),
+        config=Config(autofix_typos=True),
+        execute=execute,
+    )
+
+    assert result.status == "valid"
+    assert execute.queries == [FIXED, "MATCH (p:Person) RETURN p.born"]
+    assert [a.execution_error for a in result.attempts] == [None, "boom", None]
+    assert list(llm.calls[1].messages) == chat_messages(
+        "Who?", [Round(FIXED, (), "boom")], FULL
+    )
+
+
+async def test_a_fix_that_shows_another_typo_is_followed_by_a_second_fix():
+    # with the label wrong the properties could not be checked, so the second typo shows only now
+    query = "MATCH (p:Persn) RETURN p.nme"
+    llm = FakeLLM([reply(query)])
+    validate = ScriptedValidator(
+        misspelled(label="Persn"), misspelled(prop="nme"), VALID
+    )
+
+    result = await run_workflow(
+        "Who?",
+        FULL,
+        llm=llm,
+        validate=validate,
+        config=Config(attempts_w_filtered=0, total_attempts=0, autofix_typos=True),
+    )
+
+    assert result.status == "valid"
+    assert validate.queries == [
+        query,
+        "MATCH (p:Person) RETURN p.nme",
+        "MATCH (p:Person) RETURN p.name",
+    ]
+    assert [(a.query, a.auto_fixed) for a in result.attempts] == [
+        (query, False),
+        ("MATCH (p:Person) RETURN p.name", True),
+    ]
+    assert len(llm.calls) == 1
+
+
+async def test_the_fixes_are_given_up_after_three_rounds():
+    query = "MATCH (p:Persn)-[:ACTD_IN]->(m:Movi) RETURN p.nme"
+    llm = FakeLLM([reply(query)])
+    # each fix shows another layer: the label, then the type, then the property, then one more label
+    validate = ScriptedValidator(
+        misspelled(label="Persn"),
+        misspelled(type="ACTD_IN"),
+        misspelled(prop="nme"),
+        misspelled(label="Movi"),
+    )
+
+    result = await run_workflow(
+        "Who?",
+        FULL,
+        llm=llm,
+        validate=validate,
+        config=Config(attempts_w_filtered=0, total_attempts=0, autofix_typos=True),
+    )
+
+    # the query as it is, and three fixes; the fourth would be one fix too many
+    assert result.status == "failed"
+    assert validate.queries == [
+        query,
+        "MATCH (p:Person)-[:ACTD_IN]->(m:Movi) RETURN p.nme",
+        "MATCH (p:Person)-[:ACTED_IN]->(m:Movi) RETURN p.nme",
+        "MATCH (p:Person)-[:ACTED_IN]->(m:Movi) RETURN p.name",
+    ]
+    # none of them passed, so none is kept: the result is the query the LLM wrote
+    assert result.query == query
+    assert not any(a.auto_fixed for a in result.attempts)

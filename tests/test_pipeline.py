@@ -539,3 +539,40 @@ async def test_with_zero_example_values_nothing_from_the_graph_is_in_the_prompt(
     for value in ("Keanu", "Carrie", "Neo", "Trinity", "Matrix", "SciFi", "e.g."):
         assert value not in system
     assert "the way the examples are written" not in system
+
+
+async def test_a_typo_is_fixed_on_a_real_graph_without_asking_the_llm_again(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    llm = FakeLLM([reply("MATCH (p:Persn)-[:ACTD_IN]->(m:Movi) RETURN p.nme, m.titel")])
+
+    result = await Text2Cypher(
+        falkordb_client,
+        llm,
+        config=Config(autofix_typos=True, execute=True, example_values=0),
+    ).run("Who acted in what?", movies_graph)
+
+    assert result.status == "valid"
+    assert result.query == (
+        "MATCH (p:Person)-[:ACTED_IN]->(m:Movie) RETURN p.name, m.title"
+    )
+    assert len(llm.calls) == 1
+    assert [a.auto_fixed for a in result.attempts] == [False, True]
+    assert result.records == Records(("p.name", "m.title"), (("Keanu", "Matrix"),))
+
+
+async def test_without_the_option_the_same_typos_are_corrected_by_the_llm(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    llm = FakeLLM(
+        [
+            reply("MATCH (p:Persn) RETURN p.name"),
+            reply("MATCH (p:Person) RETURN p.name"),
+        ]
+    )
+
+    result = await Text2Cypher(falkordb_client, llm).run("Who?", movies_graph)
+
+    assert result.status == "valid"
+    assert len(llm.calls) == 2
+    assert not any(a.auto_fixed for a in result.attempts)

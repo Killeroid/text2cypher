@@ -84,6 +84,7 @@ agent = Text2Cypher(client, llm, config=Config(attempts_w_filtered=2, total_atte
 | `check_performance` | `False` | Report a cartesian product, a scan of every node and a path with no upper bound. See [](checks.md). |
 | `use_parameters` | `False` | The LLM puts the values in a `CYPHER` header and uses parameters, which FalkorDB can plan once and reuse. `Result.query` is still one string that runs as it is. |
 | `example_values` | `3` | Example values of each property shown to the LLM; they are data from your graph that goes to the LLM provider, so `0` sends none. See [](schema.md#example-values). |
+| `autofix_typos` | `False` | Fix a misspelled label, relationship type or property without the LLM when exactly one name of the graph is a likely typo of it; the fixed query is validated again. See [](how-it-works.md). |
 | `schema_refresh_seconds` | `None` | Keep a graph's schema and check it for changes at most this often; `None` reads it on every run. See [](schema.md). |
 
 `Config` rejects negative values and `total_attempts < attempts_w_filtered`. The LLM is sent your question, the schema, up to `example_values` real values of each property, and the problems of its earlier attempts, and, with `execute`, FalkorDB's error for a query that fails.

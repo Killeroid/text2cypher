@@ -27,6 +27,10 @@ def test_a_negative_number_of_example_values_is_rejected():
         Config(example_values=-1)
 
 
+def test_typos_are_not_fixed_without_the_llm_by_default():
+    assert Config().autofix_typos is False
+
+
 def test_config_defaults():
     assert Config() == Config(attempts_w_filtered=5, total_attempts=10)
 

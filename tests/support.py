@@ -37,6 +37,22 @@ def invalid(description: str, code: str = cg.UNKNOWN_LABEL) -> ValidationResult:
     return ValidationResult((make_issue(code, description, **fields),), True, 0.0, None)
 
 
+def misspelled(
+    *, label: str | None = None, type: str | None = None, prop: str | None = None
+) -> ValidationResult:
+    """A validation result for a query that uses a name the graph does not have."""
+    issues = []
+    if label:
+        issues.append(make_issue(cg.UNKNOWN_LABEL, "No label.", label=label))
+    if type:
+        issues.append(
+            make_issue(cg.UNKNOWN_REL_TYPE, "No type.", relationship_type=type)
+        )
+    if prop:
+        issues.append(make_issue(cg.UNKNOWN_PROPERTY, "No property.", property=prop))
+    return ValidationResult(tuple(issues), True, 0.0, None)
+
+
 class ScriptedValidator:
     """Answers each call with the next canned result, and records the queries."""
 

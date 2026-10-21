@@ -80,19 +80,26 @@ def _plain(text: str, suggested: str | None) -> str:
     return description
 
 
-def _closest(name: str, candidates: Iterable[str]) -> str | None:
-    """The candidate that ``name`` is most likely a misspelling of, if there is one.
+def likely_typos(name: str, candidates: Iterable[str]) -> list[tuple[float, str]]:
+    """The candidates that ``name`` may be a misspelling of, each with how alike they are.
 
     A likely typo is very similar, or fairly similar and starts the same way (``rate`` for
     ``rating``); sharing a few letters is not enough (``Client`` and ``City``).
     """
-    best, best_ratio = None, 0.0
+    found = []
     for candidate in candidates:
         ratio = SequenceMatcher(None, name.lower(), candidate.lower()).ratio()
         starts_alike = name.lower()[:_PREFIX] == candidate.lower()[:_PREFIX]
-        if ratio > best_ratio and (
-            ratio >= _SURE or (ratio >= _LIKELY and starts_alike)
-        ):
+        if ratio >= _SURE or (ratio >= _LIKELY and starts_alike):
+            found.append((ratio, candidate))
+    return found
+
+
+def _closest(name: str, candidates: Iterable[str]) -> str | None:
+    """The candidate that ``name`` is most likely a misspelling of, if there is one."""
+    best, best_ratio = None, 0.0
+    for ratio, candidate in likely_typos(name, candidates):
+        if ratio > best_ratio:
             best, best_ratio = candidate, ratio
     return best
 

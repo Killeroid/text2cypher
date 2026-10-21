@@ -15,6 +15,7 @@ text2cypher asks an LLM to write the query, checks it against the real graph wit
 * **Self-correcting**: the problems found are written back to the LLM. If the cut-down schema does not get there, the loop moves to the full one.
 * **Honest outcomes**: `valid`, `unanswerable` (the LLM declined) or `failed` (the corrections ran out), with every attempt, its issues, the schema it used and its token usage.
 * **Example values**: the schema shows up to three values of each property, so the LLM writes values the way your graph does. They are real data sent to the LLM provider: `Config(example_values=0)` sends none.
+* **Typos fixed without the LLM** (optional): a misspelled label, relationship type or property that is a likely typo of exactly one name in your graph is replaced and the query validated again, at no cost in LLM calls.
 * **Optional execution**: run the query read-only, with a timeout, and get the rows; a query that FalkorDB fails at run time is sent back to the LLM like any other problem.
 * **Bring your own LLM**: a small protocol, `chat` (the conversation as turns) or just `complete`, with an OpenAI client included. Async throughout.
 
