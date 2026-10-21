@@ -602,3 +602,106 @@ async def test_a_parameter_header_with_commas_is_repaired_on_a_real_graph(
     )
     assert [a.auto_fixed for a in result.attempts] == [False, True]
     assert result.records == Records(("p.name", "n"), (("Keanu", 1),))
+
+
+async def test_clearing_the_schema_makes_the_next_run_read_the_changed_graph(
+    falkordb_client: FalkorDB, film_graph: AsyncGraph
+):
+    llm = FakeLLM([reply("MATCH (m:Movie) RETURN m.title")] * 3)
+    agent = Text2Cypher(
+        falkordb_client,
+        llm,
+        config=Config(schema_refresh_seconds=3600, example_values=0),
+        schema_filter=None,
+    )
+    await agent.run("Which movies?", film_graph.name)
+    await film_graph.query("CREATE (:Award {name: 'Oscar'})")
+
+    await agent.run("Which movies?", film_graph.name)
+    agent.clear_schema(film_graph.name)
+    await agent.run("Which movies?", film_graph.name)
+
+    # the schema is kept, so the new label is not seen until it is cleared
+    assert "Award" not in llm.calls[1].system
+    assert "Award {name: STRING}" in llm.calls[2].system
+
+
+async def test_clearing_the_schema_reads_the_example_values_again(
+    falkordb_client: FalkorDB, film_graph: AsyncGraph
+):
+    llm = FakeLLM([reply("MATCH (g:Genre) RETURN g.name")] * 3)
+    agent = Text2Cypher(falkordb_client, llm)
+    await agent.run("Which genres?", film_graph.name)
+    await film_graph.query("MATCH (g:Genre) SET g.name = 'Thriller'")
+
+    await agent.run("Which genres?", film_graph.name)
+    agent.clear_schema()
+    await agent.run("Which genres?", film_graph.name)
+
+    # the same structure keeps its examples, and clearing reads them again
+    assert "Genre {name: STRING (e.g. 'SciFi'" in llm.calls[1].system
+    assert "Genre {name: STRING (e.g. 'Thriller'" in llm.calls[2].system
+
+
+async def test_clearing_one_graph_leaves_the_others_kept(
+    falkordb_client: FalkorDB, film_graph: AsyncGraph, movies_graph: str, commands
+):
+    llm = FakeLLM([reply("MATCH (p:Person) RETURN p.name")] * 4)
+    agent = Text2Cypher(
+        falkordb_client, llm, config=Config(schema_refresh_seconds=3600)
+    )
+    await agent.run("Who?", film_graph.name)
+    await agent.run("Who?", movies_graph)
+
+    commands.clear()
+    agent.clear_schema(film_graph.name)
+    await agent.run("Who?", movies_graph)
+    kept = sum(commands.values())
+    commands.clear()
+    await agent.run("Who?", film_graph.name)
+
+    # the graph that was kept costs the one request to plan the query; the cleared one is read again
+    assert kept == 1
+    assert sum(commands.values()) > kept
+
+
+async def test_clearing_a_graph_that_was_never_read_is_fine(
+    falkordb_client: FalkorDB,
+):
+    agent = Text2Cypher(falkordb_client, FakeLLM([]))
+
+    agent.clear_schema("never_read")
+    agent.clear_schema()
+
+
+async def test_the_troubleshooting_page_reads_a_result_with_the_names_it_documents(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    llm = FakeLLM(
+        [
+            reply("MATCH (p:Persn) RETURN p.name"),
+            reply("MATCH (p:Person) RETURN p.name"),
+        ]
+    )
+    result = await Text2Cypher(falkordb_client, llm, config=Config(execute=True)).run(
+        "Who?", movies_graph
+    )
+
+    lines = []
+    for number, attempt in enumerate(result.attempts, start=1):
+        lines.append(
+            f"{number}. [{attempt.schema_scope}] {attempt.query or '(declined)'}"
+        )
+        if attempt.auto_fixed:
+            lines.append("   repaired without the LLM")
+        if attempt.execution_error:
+            lines.append(f"   FalkorDB: {attempt.execution_error}")
+        if attempt.validation:
+            lines.extend(
+                f"   {issue.code}: {issue.description}"
+                for issue in attempt.validation.issues
+            )
+
+    assert lines[0] == "1. [full] MATCH (p:Persn) RETURN p.name"
+    assert any("UnknownLabel" in line for line in lines)
+    assert lines[-1] == "2. [full] MATCH (p:Person) RETURN p.name"

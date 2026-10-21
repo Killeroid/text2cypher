@@ -6,6 +6,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Added
 
+- `Text2Cypher.clear_schema(graph=None)` forgets what is kept of the schema of one graph or of all of them (the snapshot, and the example values, which are otherwise read once for a structure of the graph), so the next
+  run reads it again. A new guide, "When a question fails", says what to look at and what to try for each outcome.
 - With `use_parameters`, a `CYPHER` header with commas between the pairs, or without the `CYPHER`, is repaired without the LLM: FalkorDB rejects both as a syntax error, which used to cost a correction. The query is
   validated again and, if it passes, is the answer at no cost in LLM calls (`Attempt.auto_fixed`). A comma inside a string or a list is kept. It changes nothing about what a query means, so it has no option.
 - `OpenAIClient(timeout=120.0, max_retries=None)`: how long a call waits for a reply, and how many times the SDK retries a failing one. The SDK's own timeout is 10 minutes, which a loop of up to a dozen calls

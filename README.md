@@ -71,6 +71,7 @@ The full documentation is at **[text2cypher.readthedocs.io](https://text2cypher.
 * [Using text2cypher](https://text2cypher.readthedocs.io/en/latest/usage.html): the result, the configuration, running the query, errors
 * [How it works](https://text2cypher.readthedocs.io/en/latest/how-it-works.html): the loop, the escalation and what it costs
 * [The schema and its filter](https://text2cypher.readthedocs.io/en/latest/schema.html): what the LLM is shown, your own filter, keeping the schema between runs
+* [When a question fails](https://text2cypher.readthedocs.io/en/latest/troubleshooting.html): what to look at, and what to try, for each outcome
 * [LLM clients](https://text2cypher.readthedocs.io/en/latest/llm.html): your own client, other OpenAI-compatible models, `FakeLLM` for tests
 * [What is and is not checked](https://text2cypher.readthedocs.io/en/latest/checks.html) and the [API reference](https://text2cypher.readthedocs.io/en/latest/reference.html)
 

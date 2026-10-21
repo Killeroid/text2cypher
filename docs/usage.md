@@ -129,6 +129,8 @@ A catch of your provider's own exception (for example the OpenAI `RateLimitError
 * Errors from the database while reading the schema, before any LLM call, are not caught: they reach you as they are.
 * A timeout or a lost connection while executing is recorded in `result.execution_error`, as above; an error from FalkorDB about the query is corrected, as above.
 
+If a question did not go as you wanted, [](troubleshooting.md) says what to look at for each outcome.
+
 ## Try it without a server or a model
 
 This example starts an embedded FalkorDB ([FalkorDBLite](https://pypi.org/project/falkordblite/)) with a small film graph and answers with a scripted LLM, so the whole flow, including a correction, runs in a few seconds. It is in the repository as `examples/quickstart.py`.

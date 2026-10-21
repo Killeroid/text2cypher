@@ -46,6 +46,17 @@ class Text2Cypher:
             client, self._config.schema_refresh_seconds, self._config.example_values
         )
 
+    def clear_schema(self, graph: str | None = None) -> None:
+        """Forget what is kept of the schema of ``graph``, or of every graph.
+
+        The next ``run`` reads the schema again, and the example values too, which are kept
+        while the structure of the graph is the same and so do not notice a changed value.
+        Use it after changing a graph when ``config.schema_refresh_seconds`` keeps the schema,
+        or to read new example values. It queries nothing and has no effect on a run that is
+        in progress.
+        """
+        self._schemas.forget(graph)
+
     async def run(self, question: str, graph: str) -> Result:
         """Write a query for ``question`` over the graph named ``graph``.
 

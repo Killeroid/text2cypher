@@ -13,6 +13,7 @@ how-it-works
 schema
 llm
 checks
+troubleshooting
 ```
 
 ```{toctree}

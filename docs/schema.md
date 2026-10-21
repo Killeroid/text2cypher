@@ -9,7 +9,6 @@ FalkorDB has no declared schema, so text2cypher describes the graph by what it c
 * `paths`: the one-hop paths that exist, as `Path(source, type, target)`. A node with several labels gives one path per label.
 * `functions`: the user-defined functions of the FalkorDB instance (`library.function`), listed under `User-defined functions:` in the prompt with the rule to call only those listed. They belong to the instance, so the filter keeps all of them.
 * `indexes`: the indexes on properties, as `Index(entity, property, type)` with `type` one of `RANGE`, `FULLTEXT` or `VECTOR`. They are listed under `Indexes:` in the prompt, and the prompt gets a rule for each kind that exists: compare an indexed property directly (`=`, `<`, `>`, `IN`) because `<>`, `NOT`, `STARTS WITH`, `CONTAINS` and a function on the property cannot use the index (checked on FalkorDB); search words with `db.idx.fulltext.queryNodes` only when the question is a word search; and never call `db.idx.vector.*`, because there is no embedding for the question.
-
 * `node_examples` and `relationship_examples`: up to `Config.example_values` (3 by default) example values of each plain property, written as in a query, which are shown after the type. See [Example values](#example-values).
 
 Labels, relationship types and properties whose name contains a backtick are left out: FalkorDB cannot parse an escaped backtick, so no query can use them.
@@ -111,5 +110,7 @@ agent = Text2Cypher(client, llm, config=Config(schema_refresh_seconds=300))
 ```
 
 `0` checks on every run. The check is a heuristic: removing one relationship and adding another leaves the counts as they were. Between checks a change to the graph is not in the prompt, but the validators ask the database before they report a problem, so a query that uses a new label or property is still accepted.
+
+To forget what is kept, call `agent.clear_schema("movies")` for one graph or `agent.clear_schema()` for all of them. The next run reads the schema again, and the example values too, which are kept while the structure of the graph is the same and so do not notice a changed value. It queries nothing by itself.
 
 In both cases the validators answer from the snapshot the prompt was written from. They ask FalkorDB only to plan the query and to confirm a problem before reporting it, so a query that is fine costs one request.

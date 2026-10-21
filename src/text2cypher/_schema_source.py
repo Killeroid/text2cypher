@@ -41,6 +41,17 @@ class SchemaSource:
         # graph name -> the structure the examples were read for, and the examples
         self._examples: dict[str, tuple[Snapshot, tuple[Examples, Examples]]] = {}
 
+    def forget(self, graph: str | None = None) -> None:
+        """Drop what is kept for ``graph``, or for every graph: the next read starts again.
+
+        That is the snapshot and the example values; nothing is queried until then.
+        """
+        for kept in (self._live, self._examples):
+            if graph is None:
+                kept.clear()
+            else:
+                kept.pop(graph, None)
+
     async def read(self, graph: str) -> tuple[GraphSchema, SnapshotSource]:
         """The graph's schema, and the source the validators should use.
 

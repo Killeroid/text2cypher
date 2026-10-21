@@ -189,6 +189,9 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   The snapshot also feeds the validators (cypher-guardrail's hybrid mode): they answer lookups from it and ask the
   database only to plan the query (`EXPLAIN`) and to confirm a problem before reporting it. Checked on the test graph:
   identical issues and scores for every kind of issue, and a query that is fine costs one request instead of up to ten.
+- **Clearing what is kept.** `Text2Cypher.clear_schema(graph=None)` calls `SchemaSource.forget`, which drops the live snapshot and the example values of one graph or of all, so the next run reads
+  them again. It is synchronous and queries nothing. The explicit clear is what another project exposes as an endpoint; here it also covers the examples, which a changed value inside the
+  same structure would otherwise never refresh.
 - **Keeping the schema.** `Config.schema_refresh_seconds=None` (the default) captures on every run. A number keeps one
   `AsyncLiveSnapshot` per graph: when the time is up, `Text2Cypher` awaits its `refresh()`, which compares a fingerprint
   (names, indexes, node and relationship counts) and scans again only if it differs. The live snapshot's own background
