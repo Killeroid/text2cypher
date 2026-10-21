@@ -72,11 +72,11 @@ The relationships:
 (:Movie)-[:IN_GENRE]->(:Genre)
 ```
 
-The filter is lexical. It does not know that "people" means `Person` or that "films" means `Movie`, and it does not match property names, so for such a question it keeps the whole schema (or too little). Too little is not final: the first `attempts_w_filtered` corrections use the filtered schema, the later ones the full schema, and an empty answer on the filtered schema is retried on the full one (see [](how-it-works.md)).
+The filter is lexical. It does not know that "people" means `Person` or that "films" means `Movie`, and it does not match property names, so for such a question it keeps the whole schema (or too little). To let a model choose, see [Asking an LLM to filter](#asking-an-llm-to-filter). Too little is not final: the first `attempts_w_filtered` corrections use the filtered schema, the later ones the full schema, and an empty answer on the filtered schema is retried on the full one (see [](how-it-works.md)).
 
 ## Your own filter
 
-The filter keeps the indexes of what it keeps. A filter is any function from the full schema and the question to a smaller schema ({py:data}`~text2cypher.schema._filter.SchemaFilter`). Pass it as `schema_filter`, or pass `None` to always use the full schema:
+A filter is any function from the full schema and the question to a smaller schema ({py:data}`~text2cypher.schema._filter.SchemaFilter`). Pass it as `schema_filter`, or pass `None` to always use the full schema:
 
 ```python
 from text2cypher import GraphSchema, Text2Cypher
@@ -97,7 +97,43 @@ agent = Text2Cypher(
 )  # or schema_filter=None
 ```
 
-A filter that returns the whole schema counts as no filter, so no attempt is labelled "filtered" and nothing is retried. The filter is synchronous.
+A filter that returns the whole schema counts as no filter, so no attempt is labelled "filtered" and nothing is retried.
+
+To keep a label, a relationship type and what goes with them (the paths they are on, those paths' ends, and the properties, indexes and example values of all of them), end with {py:func}`~text2cypher.schema.restrict_schema`:
+
+```python
+from text2cypher.schema import restrict_schema
+
+
+def keep_people(schema: GraphSchema, question: str) -> GraphSchema:
+    return restrict_schema(schema, ["Person"], ["KNOWS"])
+```
+
+A filter may also be asynchronous, and it may ask a model: see below.
+
+## Asking an LLM to filter
+
+The lexical filter does not know that "people" means `Person` or that "films" means `Movie`, and when nothing matches it keeps the whole schema. On a large graph that is the expensive case. {py:class}`~text2cypher.LLMSchemaFilter` asks a model which labels and relationship types the question needs instead:
+
+```python
+from text2cypher import LLMSchemaFilter, OpenAIClient, Text2Cypher
+
+# the main model chooses too
+agent = Text2Cypher(client, llm, schema_filter=LLMSchemaFilter())
+
+# or a cheaper model, for the choosing only
+agent = Text2Cypher(
+    client, llm, schema_filter=LLMSchemaFilter(OpenAIClient("a-small-model"))
+)
+```
+
+* **It replaces the lexical filter.** Choosing it means it runs alone: the offline filter does not run first, and the model is shown the whole schema.
+* **What the model sees:** the question, each label with its property names, and the paths between them. No types, no example values, no indexes. It answers with the labels and relationship types it needs, and those and the paths they are on are kept (the same as `restrict_schema`). A name that is not in the schema is dropped.
+* **If it cannot be used, you lose nothing.** A reply that is not valid, names nothing in the schema or chooses nothing, and a call that fails, all keep the whole schema, so the question is written with everything. As with any filtered schema, one that turns out to be too small costs corrections, not the answer: the loop moves to the full schema after `attempts_w_filtered`.
+* **Small schemas are not filtered.** Below `min_entities` labels plus relationship types (20 by default) the whole schema is kept without asking, because there is little to cut. `min_entities=0` always asks.
+* **It costs a call.** The filter's tokens are on `result.filter_usage` and in `result.usage`, and in the `usage` of an `LLMError`. The default filter asks no model, so its `filter_usage` is zero.
+
+A filter you write may be `async` too. It returns a `GraphSchema`, or a {py:class}`~text2cypher.FilterResult` that also says what it cost, which is how it reports tokens ({py:class}`~text2cypher.AsyncSchemaFilter`).
 
 ## Keeping the schema
 

@@ -9,6 +9,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from text2cypher._config import Config
 from text2cypher._errors import GraphNotFoundError, Text2CypherError
+from text2cypher._generation import AsyncSchemaFilter, FilterResult, LLMSchemaFilter
 from text2cypher._pipeline import Text2Cypher
 from text2cypher._results import (
     Attempt,
@@ -37,15 +38,18 @@ except PackageNotFoundError:  # running from a source tree that is not installed
 __all__ = [
     "AsyncChatClient",
     "AsyncLLMClient",
+    "AsyncSchemaFilter",
     "Attempt",
     "Completion",
     "Config",
     "DatabaseError",
     "FakeLLM",
+    "FilterResult",
     "GraphNotFoundError",
     "GraphSchema",
     "Issue",
     "LLMError",
+    "LLMSchemaFilter",
     "Message",
     "OpenAIClient",
     "Records",

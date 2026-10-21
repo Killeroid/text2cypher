@@ -8,13 +8,16 @@ from redis.exceptions import RedisError
 from text2cypher._config import Config
 from text2cypher._execution import Execution
 from text2cypher._generation import (
+    AsyncSchemaFilter,
     Generation,
     Round,
+    apply_filter,
     fix_typos,
     generate_cypher,
     repair_header,
 )
 from text2cypher._results import (
+    NO_TOKENS,
     Attempt,
     DatabaseError,
     LLMError,
@@ -38,7 +41,7 @@ async def run_workflow(
     llm: AsyncChatClient | AsyncLLMClient,
     validate: Callable[[str], Awaitable[ValidationResult]],
     config: Config,
-    schema_filter: SchemaFilter | None = None,
+    schema_filter: SchemaFilter | AsyncSchemaFilter | None = None,
     execute: Callable[[str], Awaitable[Execution]] | None = None,
 ) -> Result:
     """Answer ``question`` with a query that passes ``validate``, if one can be found.
@@ -46,7 +49,8 @@ async def run_workflow(
     The first query and the first ``config.attempts_w_filtered`` corrections use the
     filtered schema, the later corrections the full one, until ``config.total_attempts``
     corrections have been made. Without a ``schema_filter``, or when it keeps the whole
-    schema, there is no filtered schema and every attempt uses the full one.
+    schema, there is no filtered schema and every attempt uses the full one. A filter may
+    be asynchronous and ask a model; what that cost is on the result as ``filter_usage``.
 
     An empty query is the LLM declining. With the filtered schema that may be the
     filter's doing, so the same request is made again with the full schema, once and
@@ -64,9 +68,11 @@ async def run_workflow(
     connection ends the loop with the valid query and the error, as they say nothing
     about the query.
     """
-    filtered = None if schema_filter is None else schema_filter(schema, question)
-    if filtered == schema:
-        filtered = None
+    filtered, filter_usage = None, NO_TOKENS
+    if schema_filter is not None:
+        applied = await apply_filter(schema_filter, schema, question)
+        filtered = None if applied.schema == schema else applied.schema
+        filter_usage = applied.usage
     attempts: list[Attempt] = []
     # The queries written so far that failed, which the next request corrects
     rounds: list[Round] = []
@@ -84,11 +90,13 @@ async def run_workflow(
                 llm, used, question, rounds, parameterize=config.use_parameters
             )
         except Exception as error:
-            raise LLMError.after(question, attempts, error) from error
+            raise LLMError.after(question, attempts, error, filter_usage) from error
         if not generation.query:
             attempts.append(Attempt("", None, scope, generation.usage))
             if scope == "full":
-                return Result(question, "unanswerable", tuple(attempts))
+                return Result(
+                    question, "unanswerable", tuple(attempts), filter_usage=filter_usage
+                )
             escalated = True
             continue
 
@@ -105,7 +113,7 @@ async def run_workflow(
             # The query was written and paid for: it is kept, with no validation
             unchecked = Attempt(generation.query, None, scope, generation.usage)
             raise DatabaseError.after(
-                question, [*attempts, unchecked], error
+                question, [*attempts, unchecked], error, filter_usage
             ) from error
         query = checked[-1].query
         ran = Execution()
@@ -115,9 +123,13 @@ async def run_workflow(
             (*checked[:-1], replace(checked[-1], execution_error=ran.error))
         )
         if validation.valid and not ran.correctable:
-            return Result(question, "valid", tuple(attempts), ran.records, ran.error)
+            return Result(
+                question, "valid", tuple(attempts), ran.records, ran.error, filter_usage
+            )
         if corrections == config.total_attempts:
-            return Result(question, "failed", tuple(attempts), None, ran.error)
+            return Result(
+                question, "failed", tuple(attempts), None, ran.error, filter_usage
+            )
         corrections += 1
         rounds.append(Round(query, validation.issues, ran.error))
 

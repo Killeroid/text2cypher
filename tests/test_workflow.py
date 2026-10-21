@@ -17,7 +17,7 @@ from support import (
 
 from text2cypher._config import Config
 from text2cypher._execution import Execution
-from text2cypher._generation import Round, generate_cypher
+from text2cypher._generation import FilterResult, Round, generate_cypher
 from text2cypher._generation.conversation import SCHEMA_NOTE, chat_messages
 from text2cypher._generation.prompts import generator_system, generator_user
 from text2cypher._workflow import run_workflow
@@ -855,3 +855,100 @@ async def test_the_header_is_repaired_first_and_then_the_typos_if_they_are_asked
         HEADER_FIXED,
     ]
     assert len(llm.calls) == 1
+
+
+async def test_a_filter_that_is_async_is_awaited_and_what_it_cost_is_on_the_result():
+    seen = []
+
+    async def schema_filter(schema: GraphSchema, question: str) -> FilterResult:
+        seen.append(question)
+        return FilterResult(FILTERED, Usage(30, 6))
+
+    llm = FakeLLM([Completion(reply("a"), Usage(10, 4))])
+
+    result = await run_workflow(
+        "Who acted?",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(VALID),
+        config=Config(),
+        schema_filter=schema_filter,
+    )
+
+    assert seen == ["Who acted?"]
+    assert [a.schema_scope for a in result.attempts] == ["filtered"]
+    assert llm.calls[0].system == generator_system(FILTERED)
+    assert result.filter_usage == Usage(30, 6)
+    # the filter's tokens are part of the total, with the attempts'
+    assert result.usage == Usage(40, 10)
+
+
+async def test_an_async_filter_may_return_a_bare_schema():
+    async def schema_filter(schema: GraphSchema, question: str) -> GraphSchema:
+        return FILTERED
+
+    result = await run_workflow(
+        "Q",
+        FULL,
+        llm=FakeLLM([Completion(reply("a"), Usage(1, 1))]),
+        validate=ScriptedValidator(VALID),
+        config=Config(),
+        schema_filter=schema_filter,
+    )
+
+    assert result.attempts[0].schema_scope == "filtered"
+    assert result.filter_usage == Usage(0, 0)
+    assert result.usage == Usage(1, 1)
+
+
+async def test_without_an_llm_filter_nothing_is_added_to_the_usage():
+    result = await run_workflow(
+        "Q",
+        FULL,
+        llm=FakeLLM([Completion(reply("a"), Usage(10, 4))]),
+        validate=ScriptedValidator(VALID),
+        config=Config(),
+        schema_filter=lambda schema, question: FILTERED,
+    )
+
+    assert result.filter_usage == Usage(0, 0)
+    assert result.usage == Usage(10, 4)
+
+
+async def test_the_usage_is_unknown_when_the_filter_did_not_report_its_tokens():
+    async def schema_filter(schema: GraphSchema, question: str) -> FilterResult:
+        return FilterResult(FILTERED, None)
+
+    result = await run_workflow(
+        "Q",
+        FULL,
+        llm=FakeLLM([Completion(reply("a"), Usage(10, 4))]),
+        validate=ScriptedValidator(VALID),
+        config=Config(),
+        schema_filter=schema_filter,
+    )
+
+    assert result.filter_usage is None
+    assert result.usage is None
+
+
+async def test_the_filters_tokens_are_kept_when_a_run_stops_in_the_middle():
+    from text2cypher import LLMError
+
+    async def schema_filter(schema: GraphSchema, question: str) -> FilterResult:
+        return FilterResult(FILTERED, Usage(30, 6))
+
+    llm = FakeLLM([Completion(reply("a"), Usage(10, 4)), ConnectionError("down")])
+
+    with pytest.raises(LLMError) as raised:
+        await run_workflow(
+            "Q",
+            FULL,
+            llm=llm,
+            validate=ScriptedValidator(invalid("x")),
+            config=Config(),
+            schema_filter=schema_filter,
+        )
+
+    assert raised.value.filter_usage == Usage(30, 6)
+    assert raised.value.usage == Usage(40, 10)

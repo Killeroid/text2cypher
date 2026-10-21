@@ -1,6 +1,6 @@
 from dataclasses import replace
 
-from text2cypher.schema import GraphSchema, Index, Path, filter_schema
+from text2cypher.schema import GraphSchema, Index, Path, filter_schema, restrict_schema
 
 SCHEMA = GraphSchema(
     node_properties={
@@ -169,3 +169,51 @@ def test_the_filter_keeps_the_examples_of_what_it_keeps():
 
     assert filtered.node_properties == {"Movie": {"title": ("String",)}}
     assert filtered.node_examples == {"Movie": {"title": ("'Alien'",)}}
+
+
+BIG = GraphSchema(
+    node_properties={
+        "Movie": {"title": ("String",)},
+        "Person": {"name": ("String",)},
+        "Studio": {"name": ("String",)},
+    },
+    relationship_properties={"ACTED_IN": {"role": ("String",)}},
+    paths=(
+        Path("Person", "ACTED_IN", "Movie"),
+        Path("Movie", "PRODUCED_BY", "Studio"),
+    ),
+    indexes=(Index("Person", "name", "RANGE"), Index("Studio", "name", "RANGE")),
+    functions=("lib.double",),
+    node_examples={"Person": {"name": ("'Ann'",)}, "Studio": {"name": ("'Fox'",)}},
+    relationship_examples={"ACTED_IN": {"role": ("'Neo'",)}},
+)
+
+
+def test_restrict_schema_keeps_the_names_their_paths_and_what_goes_with_them():
+    kept = restrict_schema(BIG, ["Studio"], [])
+
+    assert set(kept.node_properties) == {"Studio", "Movie"}
+    assert kept.paths == (Path("Movie", "PRODUCED_BY", "Studio"),)
+    assert kept.indexes == (Index("Studio", "name", "RANGE"),)
+    assert kept.node_examples == {"Studio": {"name": ("'Fox'",)}}
+    assert kept.relationship_examples == {}
+    assert kept.functions == ("lib.double",)
+
+
+def test_restrict_schema_keeps_a_relationship_type_with_both_ends_and_its_properties():
+    kept = restrict_schema(BIG, [], ["ACTED_IN"])
+
+    assert set(kept.node_properties) == {"Person", "Movie"}
+    assert kept.relationship_properties == {"ACTED_IN": {"role": ("String",)}}
+    assert kept.relationship_examples == {"ACTED_IN": {"role": ("'Neo'",)}}
+
+
+def test_restrict_schema_ignores_a_name_the_schema_does_not_have_and_takes_any_iterable():
+    kept = restrict_schema(BIG, iter(["Robot"]), (t for t in ["FLIES_TO"]))
+
+    assert kept.paths == ()
+    assert kept.node_properties == {}
+
+
+def test_filter_schema_is_restrict_schema_after_matching_the_words():
+    assert filter_schema(BIG, "Which studios?") == restrict_schema(BIG, ["Studio"], [])

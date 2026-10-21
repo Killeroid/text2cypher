@@ -1,11 +1,13 @@
 """The entry point: ask a question of a graph."""
 
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 
 from falkordb.asyncio import FalkorDB
 
 from text2cypher._config import Config
 from text2cypher._execution import Execution, run_query
+from text2cypher._generation import AsyncSchemaFilter, LLMSchemaFilter
 from text2cypher._results import Result
 from text2cypher._schema_source import SchemaSource
 from text2cypher._validation import QueryValidator
@@ -26,8 +28,10 @@ class Text2Cypher:
         config: The limits of the correction loop, whether to execute, and how long a
             graph's schema is kept.
         schema_filter: Keeps what a question needs of the graph's schema; by default
-            ``filter_schema``, which matches the question's words to names. ``None``
-            turns filtering off: every attempt uses the full schema.
+            ``filter_schema``, which matches the question's words to names. An
+            ``LLMSchemaFilter`` asks a model instead (it is given ``llm`` unless it has
+            its own), and runs alone. ``None`` turns filtering off: every attempt uses the
+            full schema. It may be a function or an async one; see ``AsyncSchemaFilter``.
     """
 
     def __init__(
@@ -36,11 +40,14 @@ class Text2Cypher:
         llm: AsyncChatClient | AsyncLLMClient,
         *,
         config: Config | None = None,
-        schema_filter: SchemaFilter | None = filter_schema,
+        schema_filter: SchemaFilter | AsyncSchemaFilter | None = filter_schema,
     ) -> None:
         self._client = client
         self._llm = llm
         self._config = config or Config()
+        # A filter that has no model of its own is given the main one
+        if isinstance(schema_filter, LLMSchemaFilter) and schema_filter.llm is None:
+            schema_filter = replace(schema_filter, llm=llm)
         self._schema_filter = schema_filter
         self._schemas = SchemaSource(
             client, self._config.schema_refresh_seconds, self._config.example_values

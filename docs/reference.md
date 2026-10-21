@@ -60,6 +60,12 @@ The public API is what `text2cypher`, `text2cypher.llm` and `text2cypher.schema`
 .. autodata:: text2cypher.schema._filter.SchemaFilter
    :no-value:
 .. autofunction:: text2cypher.filter_schema
+.. autofunction:: text2cypher.schema.restrict_schema
+.. autoclass:: text2cypher.LLMSchemaFilter
+   :special-members: __call__
+.. autoclass:: text2cypher.FilterResult
+.. autoclass:: text2cypher.AsyncSchemaFilter
+   :special-members: __call__
 .. autofunction:: text2cypher.schema.render_schema
 .. autofunction:: text2cypher.schema.schema_from_snapshot
 ```

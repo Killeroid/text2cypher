@@ -57,7 +57,7 @@ An empty answer means the LLM sees no way to answer the question with the schema
 
 ## What the LLM sees
 
-The LLM sees your question, the schema (names and value types), up to three example values of each property (see below), and its own earlier attempts with what was wrong with them. It never sees the rows a query returns. If you ask for execution, a query that FalkorDB fails is sent back with FalkorDB's error message, which can name a value, and the corrected query is validated and run in turn.
+The LLM sees your question, the schema (names and value types; with an `LLMSchemaFilter`, a first call sees only the names of the labels, their properties and the paths), up to three example values of each property (see below), and its own earlier attempts with what was wrong with them. It never sees the rows a query returns. If you ask for execution, a query that FalkorDB fails is sent back with FalkorDB's error message, which can name a value, and the corrected query is validated and run in turn.
 
 ### Example values
 

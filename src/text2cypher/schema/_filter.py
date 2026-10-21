@@ -30,15 +30,25 @@ def filter_schema(schema: GraphSchema, question: str) -> GraphSchema:
     types = _matching(schema.relationship_properties, wanted)
     if not labels and not types:
         return schema
-    return _restrict(schema, labels, types)
+    return restrict_schema(schema, labels, types)
 
 
 def _matching(names: Iterable[str], wanted: set[str]) -> set[str]:
     return {name for name in names if _stems(name) & wanted}
 
 
-def _restrict(schema: GraphSchema, labels: set[str], types: set[str]) -> GraphSchema:
-    """The paths that touch a matched label or type, and everything those paths use."""
+def restrict_schema(
+    schema: GraphSchema, labels: Iterable[str], types: Iterable[str]
+) -> GraphSchema:
+    """The part of ``schema`` that the given labels and relationship types need.
+
+    It keeps them, the paths that touch them, the labels and relationship types on
+    those paths, and the properties, indexes and example values of all of those. The
+    instance's functions are kept whole. A name that is not in the schema is ignored.
+    This is what ``filter_schema`` does once it has matched a question's words to names,
+    and what a filter of your own can end with.
+    """
+    labels, types = set(labels), set(types)
     paths = tuple(
         path
         for path in schema.paths

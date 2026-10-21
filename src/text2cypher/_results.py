@@ -41,9 +41,17 @@ class Attempt:
     auto_fixed: bool = False
 
 
-def total_usage(attempts: Iterable[Attempt]) -> Usage | None:
-    """The tokens of ``attempts``, or ``None`` if any of them did not report them."""
-    total = Usage(0, 0)
+# What something that asked no model used: a zero, where ``None`` is "not known"
+NO_TOKENS = Usage(0, 0)
+
+
+def total_usage(
+    attempts: Iterable[Attempt], filter_usage: Usage | None = NO_TOKENS
+) -> Usage | None:
+    """The tokens of ``attempts`` and of the schema filter, or ``None`` if any is unknown."""
+    if filter_usage is None:
+        return None
+    total = filter_usage
     for attempt in attempts:
         if attempt.usage is None:
             return None
@@ -91,6 +99,9 @@ class Result:
         attempts: Every query the LLM wrote, in order, with its validation, schema and usage.
         records: What the final query returned, when it was executed and ran.
         execution_error: Why the final query did not run, when it was executed and failed.
+        filter_usage: The tokens the schema filter used before the first attempt: zero for
+            the default filter, which asks no model; ``None`` if a filter asked one that did
+            not report them. ``usage`` includes it.
     """
 
     question: str
@@ -98,6 +109,7 @@ class Result:
     attempts: tuple[Attempt, ...]
     records: Records | None = None
     execution_error: str | None = None
+    filter_usage: Usage | None = NO_TOKENS
 
     @property
     def query(self) -> str:
@@ -106,8 +118,8 @@ class Result:
 
     @property
     def usage(self) -> Usage | None:
-        """The tokens of all attempts, or ``None`` if any attempt did not report them."""
-        return total_usage(self.attempts)
+        """The tokens of the schema filter and of all attempts, or ``None`` if any is unknown."""
+        return total_usage(self.attempts, self.filter_usage)
 
 
 class RunInterrupted(Text2CypherError):
@@ -121,26 +133,36 @@ class RunInterrupted(Text2CypherError):
         attempts: The attempts that were made before the failure, in order. For a
             ``DatabaseError`` the last one is the query that was being validated, with no
             validation.
-        usage: The tokens of those attempts, or ``None`` if any did not report them. The
-            call that failed is not counted: nothing says what it cost.
+        usage: The tokens of those attempts and of the schema filter, or ``None`` if any
+            did not report them. The call that failed is not counted: nothing says what it
+            cost.
     """
 
     what = "The run stopped"
 
     def __init__(
-        self, question: str, attempts: Iterable[Attempt], message: str
+        self,
+        question: str,
+        attempts: Iterable[Attempt],
+        message: str,
+        filter_usage: Usage | None = NO_TOKENS,
     ) -> None:
         super().__init__(message)
         self.question = question
         self.attempts = tuple(attempts)
-        self.usage = total_usage(self.attempts)
+        self.filter_usage = filter_usage
+        self.usage = total_usage(self.attempts, filter_usage)
 
     def __reduce__(self) -> tuple[Any, ...]:
-        return type(self), (self.question, self.attempts, str(self))
+        return type(self), (self.question, self.attempts, str(self), self.filter_usage)
 
     @classmethod
     def after(
-        cls, question: str, attempts: Iterable[Attempt], cause: BaseException
+        cls,
+        question: str,
+        attempts: Iterable[Attempt],
+        cause: BaseException,
+        filter_usage: Usage | None = NO_TOKENS,
     ) -> Self:
         """The error for ``cause`` after ``attempts``; raise it ``from`` the cause."""
         attempts = tuple(attempts)
@@ -148,6 +170,7 @@ class RunInterrupted(Text2CypherError):
             question,
             attempts,
             f"{cls.what} after {len(attempts)} attempt(s) at {question!r}: {cause}",
+            filter_usage,
         )
 
 

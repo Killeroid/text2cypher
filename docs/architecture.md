@@ -88,6 +88,8 @@ src/text2cypher/
     ├── conversation.py  Round, the turns of a conversation (chat_messages) and the same as one message (folded_message)
     ├── problems.py      the issues of a query worded for the LLM, one handler per issue code; likely_typos
     ├── typos.py         fix_typos: replace a misspelled name in a query with the name it is a typo of
+    ├── header.py        repair_header: the CYPHER header the way FalkorDB accepts it
+    ├── schema_filter.py LLMSchemaFilter, FilterResult, AsyncSchemaFilter, apply_filter
     ├── extract.py       extract_cypher: first fenced block, else the trimmed reply
     └── generate.py      generate_cypher (a first query or a correction), Generation
 tests/                   mirrors src/: llm/ schema/ validation/ generation/ trial/, and test_workflow,
@@ -119,7 +121,7 @@ Errors from the LLM or from the database while reading the schema or validating 
 
 ### Workflow (`_workflow.py`)
 
-`run_workflow(question, schema, *, llm, validate, config, schema_filter=None)` is the loop. The validator is
+`run_workflow(question, schema, *, llm, validate, config, schema_filter=None, execute=None)` is the loop. The validator is
 passed as a callable, so the loop is tested without a database. State is explicit: the failed query to correct,
 the number of corrections, and whether the filtered schema has been given up.
 
@@ -225,7 +227,18 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   only stopwords. A matched label keeps the paths touching it, a matched type keeps its paths, and every label and
   type on a kept path stays with its properties, so the LLM can use the far end. Property names are not matched. A
   question that matches nothing keeps the whole schema, so a miss costs nothing; the lexical filter does not know
-  that "people" means `Person`. A `SchemaFilter` is a plain synchronous callable `(schema, question) -> schema`.
+  that "people" means `Person`. A `SchemaFilter` is a plain synchronous callable `(schema, question) -> schema`, and `restrict_schema(schema, labels, types)` is what it ends with (public, so a filter of
+  your own can too): the named entities, the paths that touch them, the entities on those paths, and their properties, indexes and examples.
+- **The LLM filter** (`LLMSchemaFilter(llm=None, *, min_entities=20)`, in `_generation/schema_filter.py` because it needs the LLM protocol and `schema` and `llm` are sibling layers). Choosing it replaces the
+  lexical filter: it runs alone and is shown the whole schema, so there is no pre-run to cut what it sees. The prompt: a system message that asks for the labels and relationship types a query would use, only names in the
+  schema, the question as text and never instructions, and a reply of JSON in one fenced block; a user message with the labels and their property names (no types, examples or indexes), the paths and the question.
+  The reply is read from a fenced block or the first `{...}`, names are matched without case and unknown ones dropped, and `restrict_schema` does the rest. An unusable reply (no JSON, no known name, empty lists), a
+  call that raises, or a schema below `min_entities` (labels plus the types on paths) keeps the whole schema, so it can only cost tokens, never a question; a failed call is not counted, because nothing says what it cost.
+  Cancellation passes through. With `llm=None` the `Text2Cypher` makes a copy that has its own model, so a cheaper one can be given instead. It is a frozen dataclass, safe to share.
+- **Async filters and what they cost.** `Text2Cypher(schema_filter=...)` takes a sync function, an async one, or an `AsyncSchemaFilter`; `apply_filter` calls it, awaits it if it is awaitable, and wraps a bare
+  `GraphSchema` as `FilterResult(schema, Usage(0, 0))`. `FilterResult.usage` is zero when no model was asked and `None` when one was and did not report. It goes on `Result.filter_usage` (zero by default) and
+  into `Result.usage`, and into the `usage` of `LLMError` and `DatabaseError`, since it was paid for before the first attempt. `NO_TOKENS = Usage(0, 0)` is the zero the library uses for "asked no model", as for a fixed
+  typo, where `None` means unknown.
 
 ### LLM (`llm/`)
 
@@ -418,9 +431,8 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 Each item says what would bring it back.
 
 **Planned**
-- **LLM-based schema filtering**: the LLM picks the relevant labels, relationship types and properties, behind the
-  same `SchemaFilter` interface so strategies can be compared. It needs an async filter type. Trigger: a measured
-  filtered-schema miss rate on a large graph that the lexical filter's full-schema fallback does not absorb.
+- **Selective disclosure** (a `read_skill` tool call and skills we write): needs the chat protocol extended; to be planned.
+- **The LLM filter, measured**: it is built and opt-in, and has not been compared with the lexical filter on a large graph (both trial graphs were at the ceiling).
 - **Whether structured issues can inform escalation**: an unknown label that exists nowhere in the graph will not
   be fixed by the full schema. Untested.
 - A sync facade, if demand appears (see Async only).

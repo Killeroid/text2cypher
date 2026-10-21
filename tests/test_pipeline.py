@@ -6,7 +6,16 @@ from falkordb.asyncio.graph import AsyncGraph
 from redis.exceptions import ConnectionError as RedisConnectionError
 from support import reply
 
-from text2cypher import Config, FakeLLM, GraphNotFoundError, Text2Cypher
+from text2cypher import (
+    Completion,
+    Config,
+    FakeLLM,
+    GraphNotFoundError,
+    LLMSchemaFilter,
+    Text2Cypher,
+    Usage,
+)
+from text2cypher._generation.schema_filter import _SYSTEM as _FILTER_SYSTEM
 from text2cypher._results import Records
 
 pytestmark = pytest.mark.anyio
@@ -705,3 +714,104 @@ async def test_the_troubleshooting_page_reads_a_result_with_the_names_it_documen
     assert lines[0] == "1. [full] MATCH (p:Persn) RETURN p.name"
     assert any("UnknownLabel" in line for line in lines)
     assert lines[-1] == "2. [full] MATCH (p:Person) RETURN p.name"
+
+
+def filter_reply(labels: list[str], types: list[str]) -> Completion:
+    import json
+
+    body = json.dumps({"labels": labels, "relationship_types": types})
+    return Completion(f"```json\n{body}\n```", Usage(40, 9))
+
+
+async def test_the_llm_filter_uses_the_main_model_unless_it_has_its_own(
+    falkordb_client: FalkorDB, film_graph: AsyncGraph
+):
+    llm = FakeLLM(
+        [
+            filter_reply(["Genre"], []),
+            Completion(reply("MATCH (g:Genre) RETURN g.name"), Usage(10, 4)),
+        ]
+    )
+
+    result = await Text2Cypher(
+        falkordb_client, llm, schema_filter=LLMSchemaFilter(min_entities=0)
+    ).run("Which genres are there?", film_graph.name)
+
+    # the first call is the filter's, the second the query's, made with what the filter kept
+    assert llm.calls[0].system == _FILTER_SYSTEM
+    assert "Genre {name: STRING" in llm.calls[1].system
+    assert "Person" not in llm.calls[1].system
+    assert result.status == "valid"
+    assert [a.schema_scope for a in result.attempts] == ["filtered"]
+    assert result.filter_usage == Usage(40, 9)
+    assert result.usage == Usage(50, 13)
+
+
+async def test_a_filter_with_its_own_model_leaves_the_main_one_for_the_query(
+    falkordb_client: FalkorDB, film_graph: AsyncGraph
+):
+    cheap = FakeLLM([filter_reply(["Genre"], [])])
+    main = FakeLLM([reply("MATCH (g:Genre) RETURN g.name")])
+
+    await Text2Cypher(
+        falkordb_client, main, schema_filter=LLMSchemaFilter(cheap, min_entities=0)
+    ).run("Which genres are there?", film_graph.name)
+
+    assert len(cheap.calls) == 1
+    assert len(main.calls) == 1
+    assert main.calls[0].system != _FILTER_SYSTEM
+
+
+async def test_the_llm_filter_replaces_the_lexical_one_and_sees_the_whole_schema(
+    falkordb_client: FalkorDB, film_graph: AsyncGraph
+):
+    # the words of the question match Genre and Movie, so the lexical filter would cut the rest;
+    # the model is shown everything, and its choice alone decides what the query is written with
+    llm = FakeLLM(
+        [filter_reply(["Person"], []), reply("MATCH (p:Person) RETURN p.name")]
+    )
+
+    await Text2Cypher(
+        falkordb_client, llm, schema_filter=LLMSchemaFilter(min_entities=0)
+    ).run("Which genre is the Matrix in?", film_graph.name)
+
+    shown = llm.calls[0].user
+    for name in (
+        "Genre",
+        "Movie",
+        "Person",
+        "Actor",
+        "KNOWS",
+        "(:Person)-[:ACTED_IN]->(:Movie)",
+    ):
+        assert name in shown
+    assert "Person {" in llm.calls[1].system
+    assert "Genre {" not in llm.calls[1].system
+
+
+async def test_a_small_schema_is_not_filtered_by_the_default_minimum(
+    falkordb_client: FalkorDB, film_graph: AsyncGraph
+):
+    llm = FakeLLM([reply("MATCH (g:Genre) RETURN g.name")])
+
+    result = await Text2Cypher(
+        falkordb_client, llm, schema_filter=LLMSchemaFilter()
+    ).run("Which genres are there?", film_graph.name)
+
+    assert len(llm.calls) == 1
+    assert [a.schema_scope for a in result.attempts] == ["full"]
+    assert result.filter_usage == Usage(0, 0)
+
+
+async def test_when_the_filter_cannot_be_used_the_query_is_written_with_the_whole_schema(
+    falkordb_client: FalkorDB, film_graph: AsyncGraph
+):
+    llm = FakeLLM(["I cannot say.", reply("MATCH (g:Genre) RETURN g.name")])
+
+    result = await Text2Cypher(
+        falkordb_client, llm, schema_filter=LLMSchemaFilter(min_entities=0)
+    ).run("Which genres are there?", film_graph.name)
+
+    assert result.status == "valid"
+    assert [a.schema_scope for a in result.attempts] == ["full"]
+    assert "Person {" in llm.calls[1].system
