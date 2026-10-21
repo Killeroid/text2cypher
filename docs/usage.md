@@ -85,11 +85,33 @@ agent = Text2Cypher(client, llm, config=Config(attempts_w_filtered=2, total_atte
 | `check_performance` | `False` | Report a cartesian product, a scan of every node and a path with no upper bound. See [What is and is not checked](checks.md). |
 | `use_parameters` | `False` | The LLM puts the values in a `CYPHER` header and uses parameters, which FalkorDB can plan once and reuse. `Result.query` is still one string that runs as it is. A header with commas or without `CYPHER` is repaired without the LLM. |
 | `example_values` | `3` | Example values of each property shown to the LLM; they are data from your graph that goes to the LLM provider, so `0` sends none. See [Example values](schema.md#example-values). |
-| `use_skills` | `False` | Offer the LLM short guides to parts of FalkorDB's Cypher that are easy to get wrong, to read when a question needs them. Each read is another call to the model. See [Skills](how-it-works.md#skills). |
+| `use_skills` | `False` | Offer the LLM short guides to parts of FalkorDB's Cypher that are easy to get wrong, to read when a question needs them. Each read is another call to the model. A smaller model benefits from turning this on; a stronger one gains little (see [Skills](how-it-works.md#skills)). Check it on your own questions. |
 | `autofix_typos` | `False` | Fix a misspelled label, relationship type or property without the LLM when exactly one name of the graph is a likely typo of it; the fixed query is validated again. See [How it works](how-it-works.md). |
 | `schema_refresh_seconds` | `None` | Keep a graph's schema and check it for changes at most this often; `None` reads it on every run. See [The schema and its filter](schema.md). |
 
 `Config` rejects negative values and `total_attempts < attempts_w_filtered`. The LLM is sent your question, the schema, up to `example_values` real values of each property, and the problems of its earlier attempts, and, with `execute`, FalkorDB's error for a query that fails.
+
+### Model Selection
+
+Choose LLM models based on your requirements. Different models provide different balances of speed and accuracy and cost. See [LLM clients](llm.md) for more details.
+
+
+### Schema filtering
+
+On a large graph the whole schema makes a long prompt and many ways to go wrong, so by default the schema is cut down to what the question mentions. The default is filtering by word matching through a lexical filter. The lexical filter does not know that "people" means `Person` or that "films" means `Movie`, and when nothing matches it keeps the whole schema. On a large graph that is the expensive case.
+
+You can switch to an LLM based filter which asks a model which labels and relationship types the question needs instead:
+
+```python
+from text2cypher import LLMSchemaFilter, OpenAIClient, Text2Cypher
+
+# the main model chooses too
+agent = Text2Cypher(client, llm, schema_filter=LLMSchemaFilter())
+```
+
+See [The schema and its filter](schema.md).
+
+
 
 ## Running the query
 

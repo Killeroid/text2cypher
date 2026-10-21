@@ -12,6 +12,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Added
 
+- A measurement of the LLM schema filter and of skills, with Haiku and Sonnet (one run per cell, in the `evals/` harness, replies in `evals/recorded/measurement/`): on a 36-label schema the LLM filter chose the right part on the first try for 20 and 19 of 20 questions against 12 and 11 for the word-matching filter, and skills lifted Haiku from 10 to 12 of 15 questions and made no difference for Sonnet. Both stay off by default; the README has the recommendation.
 - `Completion.finish_reason` (`"stop"`, `"length"`, `"content_filter"`, `"refusal"`, or the provider's word; `None` if not known), which `OpenAIClient` fills from the API (a message with a `refusal` and no text is a `"refusal"`), and `Attempt.finish_reason`, on every attempt that asked the LLM.
 - `Config(use_skills=True)` (off by default): the LLM is offered skills, short guides to parts of FalkorDB's Cypher that a model gets wrong without them: `graph-algorithms` (PageRank, betweenness, components, communities, BFS), `path-finding`
   (`algo.SPpaths` and `algo.SSpaths` with their options, variable-length patterns, where `shortestPath` works) and `functions` (the functions FalkorDB has, and what it lacks or spells differently, such as `!=`, `=~`, `datetime()` and `COUNT {}`).

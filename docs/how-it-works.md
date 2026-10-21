@@ -61,7 +61,8 @@ With `Config(use_skills=True)`, the LLM is offered **skills**: short guides to p
 
 Each starts with a description of when to read it, then has Usage, Examples and Notes.
 
-* The prompt lists the skills, one line each with that description, and gives the model a tool, `read_skill`, to read one by its id. The model decides what to read. The intention is that a plain lookup reads nothing and "who is the most central person?" reads `graph-algorithms`; how well a model does this has not been measured.
+* The prompt lists the skills, one line each with that description, and gives the model a tool, `read_skill`, to read one by its id. The model decides what to read. The intention is that a plain lookup reads nothing and "who is the most central person?" reads `graph-algorithms`; in a test with Haiku and Sonnet the models read the right skill for each algorithm, path and function question and none for a plain lookup (most of the time: Haiku sometimes wrote a list or string function without reading `functions`).
+* **Does it help?** Our recommendation is to leave them off by default, and to turn them on for a smaller model or for questions that use graph algorithms, weighted paths or less common functions. 
 * **Each read is another call to the model.** A request can have up to three rounds of reads, after which the model must answer, so it can take up to four calls. Their tokens are in the `usage` of the attempt that wrote the query, and `attempt.skills` lists the skills it read. Reading one skill adds about 600 tokens.
 * A correction already has what was read: the skills the model read for an earlier query are in the prompt of the next one, so it does not read them again, and the conversation is only the question, the queries and their problems.
 * A client that cannot be offered tools (see [LLM clients](llm.md)) is given every skill in the prompt instead. That costs about 2,000 tokens in every request and no extra call.

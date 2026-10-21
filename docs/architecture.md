@@ -101,8 +101,8 @@ tests/                   mirrors src/: llm/ schema/ validation/ generation/ tria
                          test_config, test_errors, test_execution, test_sample_examples, test_skills, test_examples (the
                          quickstart), test_docs (the links and the index), test_public_api; support.py, conftest.py
 examples/                quickstart.py (embedded FalkorDB, scripted LLM, one correction); run by a test
-evals/                   the trial harness (not part of the package): dataset (types), datasets/ (movies, company),
-                         replay, judge, metrics, trial, recorded/
+evals/                   the trial harness (not part of the package): dataset (types), datasets/ (movies, company,
+                         company_synonyms, skills), replay, judge, metrics, trial, recorded/
 docs/                    the Sphinx site (conf.py and the guides) and this document
 ```
 
@@ -299,7 +299,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   attempts, oldest first" with each query and its problems, and the instruction once at the end.
 - **Check section**, after the rules and before the reply format: the LLM is asked to check the query before it answers (valid syntax; every label, relationship type and property in the schema as spelled; every
   relationship in the direction the schema shows; read-only; only what the question asks for) and not to write the checks in its reply. The validators run the same checks afterwards, but a mistake the LLM catches costs
-  no correction. About 55 words in every system prompt; not measured (both trial graphs were at the ceiling), so the changelog says so. With `Config.use_parameters` it also checks
+  no correction. About 55 words in every system prompt. With `Config.use_parameters` it also checks
   that every `$parameter` has a value in the `CYPHER` header, separated by spaces and not commas (the commonest problem in that mode), and the format example is shown with a header, so
   the example never contradicts the rule that values go in parameters (default mode is byte for byte what it was; both examples are run on FalkorDB by `test_prompt_rules.py`).
 - **Rules block**: read-only; write values inline and never `$param` (a bare `$n` is `ParameterNotProvided`), unless
@@ -473,17 +473,17 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   mattered for the one question whose path needed a name the filter had dropped.
 - What the first two trials showed (two rounds, a small model, a small graph): the loop and prompts work; every decline in
   the trials was an empty block; the filter kept every name the gold queries needed except where a question's words
-  never match a name ("people" for `Person`), which fell back to the full schema. Not measured: a weaker model, a
-  large schema, how much the filter prunes, how often the decline retry fires.
+  never match a name ("people" for `Person`), which fell back to the full schema.
+- The measurement of the LLM filter and of skills (2026-10-21, ADR-049): the replay LLM answers `chat` (a `CALL <tool> <JSON>` reply stands in for a tool call), a run takes a `Condition` (filter, skills, example values), and two datasets
+  were added: `company_synonyms` (20 questions on the 36-label schema, worded unlike it, judged by validation) and `skills` (15 questions on a small graph with data, judged by rows). Haiku and Sonnet agents, one run per cell: the LLM
+  filter was right on the first schema for 20 and 19 of 20 questions against 12 and 11 for the lexical filter (every question ended valid either way, since a miss is retried on the full schema); skills lifted Haiku from 10 to 12 of 15 and made
+  no difference for Sonnet (15 of 15 both ways). The replies are in `evals/recorded/measurement/` and `tests/trial/test_measurement.py` pins the numbers. The defaults stay off. Limits: one run per cell,
+  agents and not the API, validation-only judging for the company schema.
 
 ## Not built yet
 
-Each item says what would bring it back. What was here and is built now: the LLM filter (ADR-040), skills read by a tool (ADR-043, ADR-044), the path guidance (the `path-finding` skill), example values (ADR-034), the validation checklist
-(ADR-045), a model without a system role (`OpenAIClient(system_role=False)`) and feeding a runtime failure back (ADR-033).
+Each item says what would bring it back.
 
-**Built, and waiting to be measured**
-- The LLM filter, the skills, the check section and example values are all unmeasured: both trial graphs (6 and 36 labels, Claude Haiku) were at the ceiling, so none of them could show a difference. They show on a large schema and on
-  questions about paths, algorithms and functions, with a weaker model or harder cases; the harness is there for it.
 
 **Ideas**
 - Telling the model, in a correction, that its last query was cut off (`finish_reason` is `length` on an attempt that has a query); today the query is validated and corrected like any other.

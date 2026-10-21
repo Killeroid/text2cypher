@@ -48,7 +48,7 @@ reported. The recorded trials pin them in `tests/trial/test_recorded_trial.py`.
 
 ## A large schema, without a model
 
-`large.py` is a company graph with 36 labels, 44 relationship types and 46 paths, written as a
+`datasets/company.py` is a company graph with 36 labels, 44 relationship types and 46 paths, written as a
 snapshot (a schema needs no data), with 16 questions and their gold queries. `check_gold` validates
 each gold query against it, offline, and `measure` runs the schema filter on each question: how
 many of the 80 names it kept, and which names the gold query needed and it dropped. It needs no
@@ -76,9 +76,10 @@ Not measured: example values, the check section, a larger schema, other models.
 
 ## Code
 
-`data.py` (the film graph and questions), `replay.py` (runs the questions with the replay LLM),
+`dataset.py` (the types), `datasets/` (`movies.py`, the film graph and questions; `company.py`, the large schema;
+`company_synonyms.py` and `skills.py`, for the measurement), `replay.py` (runs the questions with the replay LLM),
 `judge.py` (the verdicts), `metrics.py` (the numbers), `trial.py` (the files, the report and the
-command line), `large.py` (the large schema).
+command line).
 
 ## What it does and does not show
 
