@@ -2,13 +2,9 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 2.0.0 - 2026-10-21
 
-### Changed
-
-- A reply from the LLM with no text at all (or only white space) is no longer taken as a decline. It is a call that returned nothing, so the same request is made once more, exactly as it was, and it costs no correction; a second empty reply in
-  a row ends the run as `failed`, with no query, and not as `unanswerable`. `Attempt.empty_reply` marks each such attempt. An explicit empty fenced block is still a decline, as before. Before, a provider that returned nothing gave `unanswerable`.
-  Why the reply ended decides it when the client says: a `refusal` is a decline, `length` and `content_filter` are not asked again (the same request would hit the same limit or filter), and anything else, or not known, is asked again once.
+The LLM client protocol takes tools, which is the one breaking change (see `MIGRATION.md`). It brings skills the LLM can read, an LLM-based schema filter, the OpenAI SDK client passed as it is, and the reason a reply ended; the filter and skills were measured with Haiku and Sonnet and both stay off by default.
 
 ### Added
 
@@ -19,15 +15,6 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
   The prompt lists them with a line each, and a tool, `read_skill`, reads one when a question needs it (up to three rounds, then the model must answer). **Each read is another call to the model.** What was read is in the prompt of the next request, so a
   correction does not read it again. A client that cannot be offered tools has every skill in the prompt instead. `Attempt.skills` lists the skills read for a query and their tokens are in `Attempt.usage`. The examples of every skill, and each claim that something is missing, are run against a
   real FalkorDB server whenever the library is tested. The path-finding skill is adapted from a FalkorDB skill, under its MIT license, whose notice ships with the package (`THIRD_PARTY_NOTICES`).
-
-### Changed
-
-- **Breaking, for a client of your own:** `AsyncChatClient.chat` takes the tools a model may be offered: `chat(system, messages, tools=None, *, tool_choice="auto")`. A client with the old two-argument `chat` keeps
-  working at run time, because tools are offered only to a client that takes them (it says so with `supports_tools`, or its `chat` takes `tools` or keyword arguments), but a type checker reports the new signature.
-  `Completion`, `Message` and `Call` have more fields (with defaults), so code that unpacks them into a fixed number of names must read the fields by name. See `MIGRATION.md`.
-
-### Added
-
 - `Tool` and `ToolCall`, in the shape that the OpenAI SDK, MCP and the other tool-calling APIs share (a name, a description and a JSON Schema; an id, a name and arguments as a dict), `Completion.tool_calls`, and `Message`
   turns with `tool_calls` and a `"tool"` role carrying `tool_call_id`. `OpenAIClient` sends the tools as functions, answers every call id, and parses the model's calls (`OpenAIClient(tools=False)` for a server that cannot
   call tools); `FakeLLM` records the tools and the choice on each call and can script a tool call.
@@ -39,6 +26,15 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
   lexical filter, and it is shown the whole schema (names, property names and paths, no types or examples). It uses the main model unless given its own, perhaps a cheaper one. A reply that cannot be used, or a call that
   fails, keeps the whole schema, and a schema below `min_entities` is kept whole without asking. `Result.filter_usage` has what it cost and `Result.usage` includes it. Filters may now be `async`: `FilterResult` and `AsyncSchemaFilter`
   are new, and `restrict_schema` is the public helper that keeps the named labels and types with their paths and what goes with them.
+
+### Changed
+
+- **Breaking, for a client of your own:** `AsyncChatClient.chat` takes the tools a model may be offered: `chat(system, messages, tools=None, *, tool_choice="auto")`. A client with the old two-argument `chat` keeps
+  working at run time, because tools are offered only to a client that takes them (it says so with `supports_tools`, or its `chat` takes `tools` or keyword arguments), but a type checker reports the new signature.
+  `Completion`, `Message` and `Call` have more fields (with defaults), so code that unpacks them into a fixed number of names must read the fields by name. See `MIGRATION.md`.
+- A reply from the LLM with no text at all (or only white space) is no longer taken as a decline. It is a call that returned nothing, so the same request is made once more, exactly as it was, and it costs no correction; a second empty reply in
+  a row ends the run as `failed`, with no query, and not as `unanswerable`. `Attempt.empty_reply` marks each such attempt. An explicit empty fenced block is still a decline, as before. Before, a provider that returned nothing gave `unanswerable`.
+  Why the reply ended decides it when the client says: a `refusal` is a decline, `length` and `content_filter` are not asked again (the same request would hit the same limit or filter), and anything else, or not known, is asked again once.
 
 ## 1.2.0 - 2026-10-21
 
