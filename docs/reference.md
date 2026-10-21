@@ -22,6 +22,13 @@ The public API is what `text2cypher`, `text2cypher.llm`, `text2cypher.schema` an
    :members:
 .. autoclass:: text2cypher.Attempt
 .. autoclass:: text2cypher.Records
+   :members:
+.. autoclass:: text2cypher.GraphNode
+   :members:
+.. autoclass:: text2cypher.GraphRelationship
+   :members:
+.. autoclass:: text2cypher.GraphPath
+.. autofunction:: text2cypher.to_python
 .. autoclass:: text2cypher.Issue
    :members:
 .. autoclass:: text2cypher.ValidationResult

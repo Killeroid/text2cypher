@@ -6,6 +6,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Added
 
+- `Records.as_python()` and `to_python(value)`: the nodes, relationships and paths a query returned, as plain Python objects with no `falkordb` client in them: `GraphNode` (`id`, `labels`, `properties`), `GraphRelationship` (`id`, `type`, `start_id`, `end_id`, `properties`) and `GraphPath` (`nodes`, `relationships`), also inside lists and maps. They are read-only, compare and hash by id, and can be pickled. `rows` is unchanged, so nothing breaks, and a user who wants ORM entities builds them from `labels` and `properties`.
 - Skills of your own: `Text2Cypher(..., skills=[...])` with `Config(use_skills=True)` replaces the skills that ship with the ones you give (`[*builtin_skills(), mine]` adds to them). `Skill` (also `text2cypher.Skill`), `builtin_skills()` and `load_skills(path)`, which reads a folder with a `SKILL.md` per skill, are in the new `text2cypher.skills`. A skill is checked when it is made: a valid id, a one-line description, a body, and no example that writes to the graph; and `Text2Cypher` refuses an empty list, two skills with one id, `skills=` without `use_skills`, and, for a client that cannot be offered tools (which gets every skill in each prompt), more than 16,000 characters in all. A skill is text that steers the model and goes to the LLM provider: use only skills you trust.
 
 ### Changed

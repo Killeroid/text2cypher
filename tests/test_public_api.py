@@ -17,7 +17,10 @@ PUBLIC = {
         "DatabaseError",
         "FakeLLM",
         "FilterResult",
+        "GraphNode",
         "GraphNotFoundError",
+        "GraphPath",
+        "GraphRelationship",
         "GraphSchema",
         "Issue",
         "LLMError",
@@ -36,6 +39,7 @@ PUBLIC = {
         "ValidationResult",
         "__version__",
         "filter_schema",
+        "to_python",
     },
     "text2cypher.llm": {
         "AsyncChatClient",

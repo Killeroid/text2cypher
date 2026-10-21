@@ -126,6 +126,34 @@ print(result.records.rows)  # (('Keanu Reeves',), ('Carrie-Anne Moss',))
 print(result.execution_error)  # None
 ```
 
+### Nodes, relationships and paths as plain objects
+
+The values in `rows` are the `falkordb` client's own: a returned node is a `falkordb` `Node`, with the client's attributes. `result.records.as_python()` gives the same columns and rows with every node, relationship and path (also inside a list or a map) as a plain object that has no client in it:
+
+```python
+agent = Text2Cypher(client, llm, config=Config(execute=True))
+result = await agent.run("Show the people who acted in The Matrix", graph="movies")
+
+for person, in result.records.as_python().rows:  # the query returned `p`
+    print(person.id)  # 1
+    print(person.labels)  # ('Person',)
+    print(person.properties)  # {'name': 'Keanu Reeves', 'born': 1964}
+    print(person["name"], person.get("born"))  # Keanu Reeves 1964
+```
+
+| Value | Becomes | What it has |
+|---|---|---|
+| a node | {py:class}`~text2cypher.GraphNode` | `id`, `labels` (a tuple, so `"Person" in node.labels` works), `properties` (read-only), `node["name"]`, `node.get("name")` |
+| a relationship | {py:class}`~text2cypher.GraphRelationship` | `id`, `type`, `start_id`, `end_id` (the ids of the nodes it joins), `properties` |
+| a path | {py:class}`~text2cypher.GraphPath` | `nodes` and `relationships`, in order |
+| text, numbers, dates, points | themselves | they are plain already |
+
+* `print` shows all of it: `GraphNode(id=1, labels=('Person',), properties={'name': 'Keanu Reeves', 'born': 1964})`.
+* The objects are read-only, compare equal and hash by `id` (two nodes with one id are the same node), and can be pickled. A list becomes a list, a map a `dict`, and calling `as_python()` again changes nothing.
+* `rows` is not changed, so you can use both. {py:func}`~text2cypher.to_python` converts one value, for example one cell of a row.
+* **Only what the query returns is converted.** A query that returns `p.name` gives the text, with no link to the node it came from; ask for `p` (the prompt allows whole nodes when the question is about the entities themselves) if you want the node.
+* To make objects of your own classes or ORM entities, read `node.labels` and `node.properties` and build them yourself. An ORM's mapper usually wants the client's own `Node`, which is what `rows` still holds.
+
 If FalkorDB rejects or fails the query (a type error on a value, a division by zero, a bad argument to a function: what the validators cannot see before it runs), the error is sent back to the LLM for a correction, as the next turn of the conversation, and the corrected query is validated and run in turn. This costs a correction like any other, so it uses the same `total_attempts`. If the corrections run out on queries that FalkorDB fails, the status is `failed`, `result.query` is the last query, and `result.execution_error` is the last error (each attempt has its own in `attempt.execution_error`).
 
 If the query runs past the timeout, or FalkorDB cannot be reached, the message is in `result.execution_error` and the status stays `valid`: the query did pass the checks, that says nothing about the query, and the LLM calls you paid for are not lost. Run `result.query` yourself or try again. Queries that are `unanswerable` are never run. Values in the rows are the client's own objects (a node stays a `falkordb` `Node`). An error message from FalkorDB can name a value from your data, and it is sent to the LLM; the rows are not.

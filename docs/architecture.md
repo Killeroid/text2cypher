@@ -76,6 +76,7 @@ src/text2cypher/
 ├── _examples.py         sample_examples: a few example values of each plain property, read-only, with a timeout
 ├── _workflow.py         run_workflow: the loop and the escalation policy
 ├── _config.py           Config
+├── _values.py           GraphNode, GraphRelationship, GraphPath, to_python: what a query returns, without the client
 ├── _results.py          Result, Attempt, Records, Status, SchemaScope, total_usage, and the run errors LLMError and DatabaseError
 ├── _execution.py        execute_cypher (read-only, with a timeout), run_query and Execution (an error as a value)
 ├── skills.py            public: Skill, builtin_skills, load_skills (the names of _skills, for the skills= argument)
@@ -111,7 +112,7 @@ docs/                    the Sphinx site (conf.py and the guides) and this docum
 
 ### Pipeline (`_pipeline.py`)
 
-`Text2Cypher(client, llm, *, model=None, config=None, schema_filter=filter_schema).run(question, graph)` (`llm` may be the SDK's `AsyncOpenAI`, with `model`; see LLM):
+`Text2Cypher(client, llm, *, model=None, config=None, schema_filter=filter_schema, skills=None).run(question, graph)` (`llm` may be the SDK's `AsyncOpenAI`, with `model`; see LLM):
 
 1. Asks its `SchemaSource` for the graph's `GraphSchema` and the source the validators answer from: a `Snapshot`
    (`types=True`) captured on every call, or, with `Config.schema_refresh_seconds`, a kept one (see Schema), with the
@@ -128,7 +129,7 @@ a `DatabaseError` that keeps the attempts and the tokens so far (see Errors). `c
 
 ### Workflow (`_workflow.py`)
 
-`run_workflow(question, schema, *, llm, validate, config, schema_filter=None, execute=None)` is the loop. The validator and the executor are
+`run_workflow(question, schema, *, llm, validate, config, schema_filter=None, execute=None, skills=None)` is the loop. The validator and the executor are
 passed as callables, so the loop is tested without a database. State is explicit: the rounds (the failed queries so far, each with its issues or
 its execution error and the skills it read), the number of corrections, whether the filtered schema has been given up, and the replies with no text in a row.
 
@@ -383,7 +384,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 
 ### Skills (`_skills/`)
 
-- A skill is a folder with a `SKILL.md`: a front matter (`name`, a one-line `description`) and a guide whose examples are in `cypher` blocks. The folder's name is the id. `skills()` loads every folder, sorted, once;
+- A skill is a folder with a `SKILL.md` (the name the agent-skills convention uses; the loader finds it whatever the case, listing the folder, so a Mac and Linux agree): a front matter (`name`, a one-line `description`) and a guide whose examples are in `cypher` blocks. The folder's name is the id. `skills()` loads every folder, sorted, once;
   adding a skill is adding a folder. They ship in the wheel and the sdist, and `THIRD_PARTY_NOTICES` (the MIT notice for the path-finding skill, adapted from FalkorDB's own) ships as a license file.
 - Three skills, for the large and rarely needed: `graph-algorithms` (`algo.pageRank`, `betweenness`, `WCC`, `labelPropagation`, `BFS`), `path-finding` (`algo.SPpaths` and `algo.SSpaths` with their options, variable-length
   patterns, where `shortestPath` and `allShortestPaths` work) and `functions` (what FalkorDB names differently or lacks, and the string, list, math, date, place, vector and aggregate functions it has). The inline rules of the prompt stay:
@@ -419,7 +420,9 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 - Execution is part of the loop (`run_workflow(..., execute=...)`): a query that passed validation is run at once.
   `run_query(graph, query, *, timeout_ms)` returns an `Execution(records, error, correctable)`: any
   `redis.exceptions.RedisError` becomes an `error` string and anything else is a bug and propagates.
-  `Result.records` is `Records(columns, rows)`, with the client's own values (`Node`, `Edge`, `Path`).
+  `Result.records` is `Records(columns, rows)`, with the client's own values (`Node`, `Edge`, `Path`). `Records.as_python()` (ADR-052) gives the same rows with them as
+  `GraphNode`, `GraphRelationship` and `GraphPath` (`_values.py`): frozen, read-only properties (`MappingProxyType`), equal and hashed by id, picklable (`__reduce__`, since a mapping proxy is not), converted inside lists, tuples and
+  maps (a map comes back as a `dict`), idempotent. `rows` stays raw, so nothing changed for anyone and the conversion costs nothing unless asked for. No ORM is imported; a user builds entities from `labels` and `properties`.
 - `correctable` is true for a `ResponseError` that is not a timeout (FalkorDB rejected or failed this query: a type
   error on a value, a division by zero, a bad argument). Checked on FalkorDB with queries that pass both validators
   (`substring(name, -1)`, `year % 0`, `name / 2`). Its message becomes the next turn of the conversation
@@ -493,7 +496,8 @@ Each item says what would bring it back.
 - Reversing a wrong-direction path without the LLM: the validator gives the exact replacement. Wait for a sign that models get directions wrong often.
 - Feeding an empty result back to the LLM, opt-in: an empty result can be the right answer; a confidence like another project's would be a different design, and needs an answer-writing step.
 - A cap on the number of sampled properties of a very wide schema, and sampling only indexed or low-cardinality ones (ADR-034).
-- Skills of the user's own: needs a read-only check of their text. More skills, rewritten after running their claims on the server.
+- More skills, rewritten after running their claims on the server (skills of the user's own are built: ADR-050).
+- Query optimization from cypher-guardrail's `Advisor` (a limit, a bound on a path, a label, an index): looked at and dropped (ADR-051), because every suggestion that rewrites a query changes what it returns. Index advice for the owner of the graph, as a report over many runs, would bring it back.
 - Adapters for other LLM apps (Anthropic, LangChain) and an `OpenAIResponsesClient`: the tool shapes map one to one (ADR-042).
 - Whether structured issues can inform escalation: an unknown label that exists nowhere in the graph will not be fixed by the full schema. Untested.
 - A sync facade, if demand appears (see Async only). `run_many(questions, concurrency=N)` for dataset evaluation.

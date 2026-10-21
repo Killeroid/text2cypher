@@ -20,6 +20,7 @@ from text2cypher._results import (
 )
 from text2cypher._skills import Skill
 from text2cypher._validation import Issue, ValidationResult
+from text2cypher._values import GraphNode, GraphPath, GraphRelationship, to_python
 from text2cypher.llm import (
     AsyncChatClient,
     AsyncLLMClient,
@@ -48,7 +49,10 @@ __all__ = [
     "DatabaseError",
     "FakeLLM",
     "FilterResult",
+    "GraphNode",
     "GraphNotFoundError",
+    "GraphPath",
+    "GraphRelationship",
     "GraphSchema",
     "Issue",
     "LLMError",
@@ -67,4 +71,5 @@ __all__ = [
     "ValidationResult",
     "__version__",
     "filter_schema",
+    "to_python",
 ]

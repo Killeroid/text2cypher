@@ -6,6 +6,7 @@ from typing import Any, Literal, Self
 
 from text2cypher._errors import Text2CypherError
 from text2cypher._validation import ValidationResult
+from text2cypher._values import to_python
 from text2cypher.llm import Usage
 
 type SchemaScope = Literal["filtered", "full"]
@@ -77,7 +78,7 @@ class Records:
     """What a query returned: the names of its columns, and its rows.
 
     Values are the client's own: nodes, relationships and paths are ``falkordb``
-    objects.
+    objects. ``as_python()`` gives the same rows with them as plain objects.
 
     Attributes:
         columns: The names of the columns, as the query returns them.
@@ -86,6 +87,15 @@ class Records:
 
     columns: tuple[str, ...]
     rows: tuple[tuple[Any, ...], ...]
+
+    def as_python(self) -> Self:
+        """The same columns and rows, with every node, relationship and path (also inside a
+        list or a map) as a ``GraphNode``, ``GraphRelationship`` or ``GraphPath``, which
+        have no client in them. This ``Records`` is not changed, and calling it on one that
+        was converted gives the same values."""
+        return type(self)(
+            self.columns, tuple(tuple(to_python(v) for v in row) for row in self.rows)
+        )
 
 
 @dataclass(frozen=True, slots=True)

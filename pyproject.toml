@@ -97,7 +97,7 @@ layers = [
     "text2cypher._examples",
     "text2cypher._results",
     "text2cypher._validation",
-    "text2cypher.llm | text2cypher.schema | text2cypher._config | text2cypher._errors | text2cypher._skills",
+    "text2cypher.llm | text2cypher.schema | text2cypher._config | text2cypher._errors | text2cypher._skills | text2cypher._values",
 ]
 
 [[tool.importlinter.contracts]]
