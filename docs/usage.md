@@ -134,7 +134,7 @@ The values in `rows` are the `falkordb` client's own: a returned node is a `falk
 agent = Text2Cypher(client, llm, config=Config(execute=True))
 result = await agent.run("Show the people who acted in The Matrix", graph="movies")
 
-for person, in result.records.as_python().rows:  # the query returned `p`
+for (person,) in result.records.as_python().rows:  # the query returned `p`
     print(person.id)  # 1
     print(person.labels)  # ('Person',)
     print(person.properties)  # {'name': 'Keanu Reeves', 'born': 1964}
