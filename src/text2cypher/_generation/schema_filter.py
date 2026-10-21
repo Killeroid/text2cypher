@@ -3,12 +3,21 @@
 import inspect
 import json
 import re
-from dataclasses import dataclass
-from typing import Any, Protocol
+from dataclasses import dataclass, field, replace
+from typing import Any, Protocol, cast
+
+from openai import AsyncOpenAI
 
 from text2cypher._generation.generate import ask
 from text2cypher._results import NO_TOKENS
-from text2cypher.llm import AsyncChatClient, AsyncLLMClient, Message, Usage
+from text2cypher.llm import (
+    AsyncChatClient,
+    AsyncLLMClient,
+    Message,
+    OpenAIClient,
+    Usage,
+)
+from text2cypher.llm._adapt import as_client
 from text2cypher.schema import GraphSchema, SchemaFilter, restrict_schema
 from text2cypher.schema._model import quote_identifier
 
@@ -79,18 +88,48 @@ class LLMSchemaFilter:
     is kept whole without asking, since there is little to cut.
 
     Attributes:
-        llm: The model to ask, perhaps a cheaper one than the main model. ``None`` takes
-            the model of the ``Text2Cypher`` it is given to.
+        llm: The client to ask, perhaps a cheaper one than the main model. It may be an
+            ``openai.AsyncOpenAI`` if ``model`` says which model. ``None`` takes the client
+            of the ``Text2Cypher`` it is given to.
         min_entities: Labels plus relationship types below which no model is asked; ``0``
             always asks.
+        model: With an ``AsyncOpenAI`` as ``llm``, the model to ask. With ``llm=None``, a
+            model to ask on the main client instead of the main model: the same SDK client
+            and settings, for example a cheaper model (it needs an OpenAI client as the main
+            one).
     """
 
-    llm: AsyncChatClient | AsyncLLMClient | None = None
-    min_entities: int = 20
+    llm: AsyncChatClient | AsyncLLMClient | AsyncOpenAI | None = None
+    min_entities: int = field(default=20, kw_only=True)
+    model: str | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         if self.min_entities < 0:
             raise ValueError("min_entities must be 0 or more")
+        if self.llm is not None:
+            object.__setattr__(self, "llm", as_client(self.llm, self.model))
+
+    def bound(self, llm: AsyncChatClient | AsyncLLMClient) -> "LLMSchemaFilter":
+        """This filter with a client of its own, taking the main ``llm`` if it has none.
+
+        ``Text2Cypher`` calls this with its own client. A ``model`` on a filter that has no
+        client asks the main client with that model instead.
+
+        Raises:
+            ValueError: If ``model`` is set and ``llm`` cannot ask another model.
+        """
+        if self.llm is not None:
+            return self
+        if self.model is None:
+            return replace(self, llm=llm)
+        if not hasattr(llm, "with_model"):
+            raise ValueError(
+                "LLMSchemaFilter(model=...) asks the main client with another model, "
+                "which needs an OpenAI client as the main one: give the filter its own llm"
+            )
+        return replace(
+            self, llm=cast("OpenAIClient", llm).with_model(self.model), model=None
+        )
 
     async def __call__(self, schema: GraphSchema, question: str) -> FilterResult:
         """What the model keeps of ``schema`` for ``question``, and the tokens it took.
@@ -108,7 +147,12 @@ class LLMSchemaFilter:
             return FilterResult(schema)
         user = _user(schema, question)
         try:
-            completion = await ask(self.llm, _SYSTEM, [Message("user", user)], user)
+            completion = await ask(
+                cast("AsyncChatClient | AsyncLLMClient", self.llm),
+                _SYSTEM,
+                [Message("user", user)],
+                user,
+            )
         except Exception:  # noqa: BLE001 - a filter must not end the question; the call is not counted
             return FilterResult(schema)
         chosen = restrict_schema(schema, *_chosen(completion.text, labels, types))

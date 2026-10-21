@@ -125,8 +125,17 @@ agent = Text2Cypher(client, llm, schema_filter=LLMSchemaFilter())
 agent = Text2Cypher(
     client, llm, schema_filter=LLMSchemaFilter(OpenAIClient("a-small-model"))
 )
+
+# with the OpenAI SDK's client, the same client asks another model
+agent = Text2Cypher(
+    client,
+    AsyncOpenAI(),
+    model="your-model",
+    schema_filter=LLMSchemaFilter(model="a-small-model"),
+)
 ```
 
+* **A cheaper model.** `LLMSchemaFilter(OpenAIClient("a-small-model"))`, or an `AsyncOpenAI` with `model=`, uses a client of its own. With no client, `LLMSchemaFilter(model="a-small-model")` asks the main client with that model instead, the same SDK client and settings; that needs an OpenAI client as the main one, and says so if it is not.
 * **It replaces the lexical filter.** Choosing it means it runs alone: the offline filter does not run first, and the model is shown the whole schema.
 * **What the model sees:** the question, each label with its property names, and the paths between them. No types, no example values, no indexes. It answers with the labels and relationship types it needs, and those and the paths they are on are kept (the same as `restrict_schema`). A name that is not in the schema is dropped.
 * **If it cannot be used, you lose nothing.** A reply that is not valid, names nothing in the schema or chooses nothing, and a call that fails, all keep the whole schema, so the question is written with everything. As with any filtered schema, one that turns out to be too small costs corrections, not the answer: the loop moves to the full schema after `attempts_w_filtered`.

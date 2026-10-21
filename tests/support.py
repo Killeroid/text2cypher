@@ -1,8 +1,11 @@
 """Helpers shared by the tests: builders for the values the library passes around."""
 
+import json
 from typing import Any, cast
 
+import httpx2 as httpx
 from cypher_guardrail import issues as cg
+from openai import AsyncOpenAI
 
 from text2cypher import GraphSchema, Issue, Records, ValidationResult
 from text2cypher._execution import Execution
@@ -84,3 +87,59 @@ class ScriptedExecutor:
     async def __call__(self, query: str) -> Execution:
         self.queries.append(query)
         return next(self._executions)
+
+
+def openai_client(
+    reply: dict,
+    requests: list[dict] | None = None,
+    *,
+    failures: int = 0,
+    timeouts: list[float | None] | None = None,
+    replies: list[dict] | None = None,
+    **options: Any,
+) -> tuple[AsyncOpenAI, list[dict]]:
+    """A real ``AsyncOpenAI`` whose HTTP layer answers with ``reply``, after ``failures`` 500s.
+
+    The read timeout each request was sent with is added to ``timeouts``. With ``replies``,
+    the requests are answered with them in turn, and with ``reply`` after they run out.
+    """
+    seen: list[dict] = [] if requests is None else requests
+    failed = 0
+    queue = iter(replies or [])
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        nonlocal failed
+        seen.append(json.loads(request.content))
+        if timeouts is not None:
+            timeouts.append(request.extensions["timeout"]["read"])
+        if failed < failures:
+            failed += 1
+            return httpx.Response(500, json={"error": {"message": "busy"}})
+        return httpx.Response(200, json=next(queue, reply))
+
+    client = AsyncOpenAI(
+        api_key="test",
+        base_url="http://test/v1",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(answer)),
+        **options,
+    )
+    return client, seen
+
+
+def chat_reply(content: str | None, usage: dict | None) -> dict:
+    reply = {
+        "id": "chatcmpl-1",
+        "object": "chat.completion",
+        "created": 0,
+        "model": "test-model",
+        "choices": [
+            {
+                "index": 0,
+                "finish_reason": "stop",
+                "message": {"role": "assistant", "content": content},
+            }
+        ],
+    }
+    if usage is not None:
+        reply["usage"] = usage
+    return reply

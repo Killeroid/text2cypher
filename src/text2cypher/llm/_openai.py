@@ -1,5 +1,6 @@
 """An LLM client for OpenAI's Chat Completions API (and compatible servers)."""
 
+import copy
 from collections.abc import Sequence
 
 from openai import NOT_GIVEN, AsyncOpenAI, omit
@@ -51,6 +52,13 @@ class OpenAIClient:
         )
         self._temperature = omit if temperature is None else temperature
         self._system_role = system_role
+
+    def with_model(self, model: str) -> "OpenAIClient":
+        """A client that asks ``model`` instead, with every other setting and the same SDK
+        client, for example a cheaper model for a part of the work."""
+        other = copy.copy(self)
+        other._model = model
+        return other
 
     async def complete(self, system: str, user: str) -> Completion:
         """Ask the model with one user message; see ``chat``."""

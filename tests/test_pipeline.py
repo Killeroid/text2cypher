@@ -4,7 +4,7 @@ import pytest
 from falkordb.asyncio import FalkorDB
 from falkordb.asyncio.graph import AsyncGraph
 from redis.exceptions import ConnectionError as RedisConnectionError
-from support import reply
+from support import chat_reply, openai_client, reply
 
 from text2cypher import (
     Completion,
@@ -815,3 +815,94 @@ async def test_when_the_filter_cannot_be_used_the_query_is_written_with_the_whol
     assert result.status == "valid"
     assert [a.schema_scope for a in result.attempts] == ["full"]
     assert "Person {" in llm.calls[1].system
+
+
+def chat_json(labels: list[str]) -> dict:
+    import json
+
+    return chat_reply(
+        "```json\n"
+        + json.dumps({"labels": labels, "relationship_types": []})
+        + "\n```",
+        None,
+    )
+
+
+async def test_an_async_openai_and_a_model_work_without_wrapping_it_first(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    sdk, requests = openai_client(
+        chat_reply("```cypher\nMATCH (p:Person) RETURN p.name\n```", None)
+    )
+
+    result = await Text2Cypher(falkordb_client, sdk, model="a-model").run(
+        "Who?", movies_graph
+    )
+
+    assert result.status == "valid"
+    assert [r["model"] for r in requests] == ["a-model"]
+    assert requests[0]["messages"][0]["role"] == "system"
+
+
+async def test_an_async_openai_without_a_model_is_refused_when_the_agent_is_made(
+    falkordb_client: FalkorDB,
+):
+    sdk, _ = openai_client(chat_reply("x", None))
+
+    with pytest.raises(ValueError, match="no model of its own"):
+        Text2Cypher(falkordb_client, sdk)
+
+
+async def test_a_model_given_with_a_client_that_chooses_its_own_is_refused(
+    falkordb_client: FalkorDB,
+):
+    with pytest.raises(ValueError, match=r"is for an openai\.AsyncOpenAI"):
+        Text2Cypher(falkordb_client, FakeLLM([]), model="a-model")
+
+
+async def test_a_filter_with_a_model_asks_the_main_sdk_client_with_that_model(
+    falkordb_client: FalkorDB, film_graph: AsyncGraph
+):
+    sdk, requests = openai_client(
+        chat_reply("```cypher\nMATCH (g:Genre) RETURN g.name\n```", None),
+        replies=[chat_json(["Genre"])],
+    )
+
+    result = await Text2Cypher(
+        falkordb_client,
+        sdk,
+        model="big",
+        schema_filter=LLMSchemaFilter(model="small", min_entities=0),
+    ).run("Which genres are there?", film_graph.name)
+
+    # the cheaper model chose, the main one wrote the query
+    assert [r["model"] for r in requests] == ["small", "big"]
+    assert result.status == "valid"
+    assert [a.schema_scope for a in result.attempts] == ["filtered"]
+
+
+async def test_a_filter_with_a_model_needs_a_main_client_that_can_ask_another_model(
+    falkordb_client: FalkorDB,
+):
+    with pytest.raises(ValueError, match="needs an OpenAI client"):
+        Text2Cypher(
+            falkordb_client,
+            FakeLLM([]),
+            schema_filter=LLMSchemaFilter(model="small"),
+        )
+
+
+async def test_a_filter_with_its_own_sdk_client_and_model_leaves_the_main_one_alone(
+    falkordb_client: FalkorDB, film_graph: AsyncGraph
+):
+    cheap, cheap_requests = openai_client(chat_json(["Genre"]))
+    main = FakeLLM([reply("MATCH (g:Genre) RETURN g.name")])
+
+    await Text2Cypher(
+        falkordb_client,
+        main,
+        schema_filter=LLMSchemaFilter(cheap, model="small", min_entities=0),
+    ).run("Which genres are there?", film_graph.name)
+
+    assert [r["model"] for r in cheap_requests] == ["small"]
+    assert len(main.calls) == 1

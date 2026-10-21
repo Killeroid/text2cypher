@@ -16,12 +16,13 @@ You need a FalkorDB graph that has data, reachable with the async client (`falko
 import asyncio
 
 from falkordb.asyncio import FalkorDB
-from text2cypher import OpenAIClient, Text2Cypher
+from openai import AsyncOpenAI
+from text2cypher import Text2Cypher
 
 
 async def main() -> None:
     client = FalkorDB(host="localhost", port=6379)  # one client per event loop
-    agent = Text2Cypher(client, OpenAIClient("your-model"))
+    agent = Text2Cypher(client, AsyncOpenAI(), model="your-model")
 
     result = await agent.run("Which actors appeared in The Matrix?", graph="movies")
     print(result.status)  # "valid", "unanswerable" or "failed"

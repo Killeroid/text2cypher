@@ -1,6 +1,7 @@
 import asyncio
 
 import pytest
+from support import chat_reply, openai_client
 
 from text2cypher import (
     Completion,
@@ -252,3 +253,37 @@ async def test_any_kind_of_filter_is_applied_the_same_way():
     assert await apply_filter(sync, SCHEMA, "q") == FilterResult(kept, Usage(0, 0))
     assert await apply_filter(bare, SCHEMA, "q") == FilterResult(kept, Usage(0, 0))
     assert await apply_filter(result, SCHEMA, "q") == FilterResult(kept, Usage(5, 1))
+
+
+def test_an_async_openai_as_the_filters_client_needs_a_model():
+    sdk, _ = openai_client(chat_reply("x", None))
+
+    with pytest.raises(ValueError, match="no model of its own"):
+        LLMSchemaFilter(sdk)
+
+
+def test_a_model_with_a_client_that_is_not_an_async_openai_is_refused():
+    with pytest.raises(ValueError, match=r"is for an openai\.AsyncOpenAI"):
+        LLMSchemaFilter(FakeLLM([]), model="small")
+
+
+async def test_an_async_openai_and_a_model_are_the_filters_client():
+    import json
+
+    body = json.dumps({"labels": ["Genre"], "relationship_types": []})
+    usage = {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7}
+    sdk, requests = openai_client(chat_reply(f"```json\n{body}\n```", usage))
+
+    result = await LLMSchemaFilter(sdk, model="small", min_entities=0)(SCHEMA, "q")
+
+    assert [r["model"] for r in requests] == ["small"]
+    assert set(result.schema.node_properties) == {"Genre", "Movie"}
+    assert result.usage == Usage(5, 2)
+
+
+def test_binding_keeps_a_client_the_filter_already_has():
+    own = FakeLLM([])
+    other = FakeLLM([])
+
+    assert LLMSchemaFilter(own).bound(other).llm is own
+    assert LLMSchemaFilter().bound(other).llm is other

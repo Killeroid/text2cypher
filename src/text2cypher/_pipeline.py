@@ -1,9 +1,9 @@
 """The entry point: ask a question of a graph."""
 
 from collections.abc import Awaitable, Callable
-from dataclasses import replace
 
 from falkordb.asyncio import FalkorDB
+from openai import AsyncOpenAI
 
 from text2cypher._config import Config
 from text2cypher._execution import Execution, run_query
@@ -13,6 +13,7 @@ from text2cypher._schema_source import SchemaSource
 from text2cypher._validation import QueryValidator
 from text2cypher._workflow import run_workflow
 from text2cypher.llm import AsyncChatClient, AsyncLLMClient
+from text2cypher.llm._adapt import as_client
 from text2cypher.schema import SchemaFilter, filter_schema
 
 
@@ -22,9 +23,14 @@ class Text2Cypher:
     Args:
         client: A ``falkordb.asyncio`` client. It is bound to one event loop, so use
             one ``Text2Cypher`` per loop.
-        llm: The model that writes and corrects the queries. A client with ``chat`` is
-            given each correction as the turns of a conversation; one with only
+        llm: The model that writes and corrects the queries: an ``openai.AsyncOpenAI`` (with
+            ``model``), an ``OpenAIClient``, or a client of your own. A client with ``chat``
+            is given each correction as the turns of a conversation; one with only
             ``complete``, as one message.
+        model: The model to ask, when ``llm`` is an ``openai.AsyncOpenAI``, which has none
+            of its own. The client is then used with the defaults of ``OpenAIClient``; use
+            that class for its options. Any other kind of ``llm`` chooses its own model, and
+            ``model`` with one is an error.
         config: The limits of the correction loop, whether to execute, and how long a
             graph's schema is kept.
         schema_filter: Keeps what a question needs of the graph's schema; by default
@@ -37,17 +43,18 @@ class Text2Cypher:
     def __init__(
         self,
         client: FalkorDB,
-        llm: AsyncChatClient | AsyncLLMClient,
+        llm: AsyncChatClient | AsyncLLMClient | AsyncOpenAI,
         *,
+        model: str | None = None,
         config: Config | None = None,
         schema_filter: SchemaFilter | AsyncSchemaFilter | None = filter_schema,
     ) -> None:
         self._client = client
-        self._llm = llm
+        self._llm = as_client(llm, model)
         self._config = config or Config()
-        # A filter that has no model of its own is given the main one
-        if isinstance(schema_filter, LLMSchemaFilter) and schema_filter.llm is None:
-            schema_filter = replace(schema_filter, llm=llm)
+        # A filter that has no client of its own is given the main one
+        if isinstance(schema_filter, LLMSchemaFilter):
+            schema_filter = schema_filter.bound(self._llm)
         self._schema_filter = schema_filter
         self._schemas = SchemaSource(
             client, self._config.schema_refresh_seconds, self._config.example_values

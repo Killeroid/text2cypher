@@ -36,13 +36,29 @@ The reply should hold the query in one fenced block (` ```cypher ... ``` `). An 
 
 ## OpenAI
 
-{py:class}`~text2cypher.OpenAIClient` uses the Chat Completions API:
+The simplest way is to pass the OpenAI SDK's own client and say which model:
+
+```python
+from openai import AsyncOpenAI
+from text2cypher import Text2Cypher
+
+agent = Text2Cypher(client, AsyncOpenAI(), model="your-model")
+```
+
+* Any `openai.AsyncOpenAI` works, which includes `AsyncAzureOpenAI` (the model is then the deployment name) and a client made for an OpenAI-compatible server with `base_url`. Your own configuration of it (key, headers, proxies, retries) is used as it is.
+* It has no model of its own, so `model=` is required, and giving `model=` with any other kind of client is an error.
+* The synchronous `openai.OpenAI` is refused, because the library is async.
+* The client is used with the defaults of `OpenAIClient` (below). For its options, make one yourself.
+
+{py:class}`~text2cypher.OpenAIClient` is the same thing with its options. It uses the Chat Completions API:
 
 ```python
 from text2cypher import OpenAIClient
 
 llm = OpenAIClient("your-model")
 ```
+
+`OpenAIClient.with_model("another-model")` is a copy that asks another model with the same SDK client and settings.
 
 * There is no default model: the right one depends on your account and on how large your schema is.
 * `temperature` is `0` by default; `temperature=None` leaves it out, for models that only accept their own.

@@ -6,6 +6,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Added
 
+- An `openai.AsyncOpenAI` (also `AsyncAzureOpenAI`, and a client for a compatible server) can be passed as the `llm` of `Text2Cypher` with `model=`, without wrapping it in `OpenAIClient`: `Text2Cypher(client, AsyncOpenAI(), model="...")`.
+  An SDK client has no model of its own, so `model=` is required for it and is an error with any other client; the synchronous `openai.OpenAI` is refused. `LLMSchemaFilter` takes `model` too: with its own
+  SDK client it names the model, and with `llm=None` it asks the main client with another model (a cheaper one), through the new `OpenAIClient.with_model`.
 - `LLMSchemaFilter(llm=None, min_entities=20)`: a schema filter that asks a model which labels and relationship types a question needs, instead of matching its words to names. Choosing it replaces the
   lexical filter, and it is shown the whole schema (names, property names and paths, no types or examples). It uses the main model unless given its own, perhaps a cheaper one. A reply that cannot be used, or a call that
   fails, keeps the whole schema, and a schema below `min_entities` is kept whole without asking. `Result.filter_usage` has what it cost and `Result.usage` includes it. Filters may now be `async`: `FilterResult` and `AsyncSchemaFilter`

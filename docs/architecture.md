@@ -250,6 +250,11 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   that is not callable (an SDK client's namespace) does not count. The choice is made in `generate_cypher`, not in an
   adapter, because the one-message form lists the attempts and ends with the instruction once, which a generic
   adapter over turns could not do without parsing the prompt text.
+- **The SDK's own client is accepted** wherever an LLM is (`llm/_adapt.py`, `as_client(llm, model)`): an `openai.AsyncOpenAI` (also `AsyncAzureOpenAI`, and one for a compatible
+  server) with `model=` becomes an `OpenAIClient` with its defaults. `model=` is required for it (the SDK client has none) and an error with any other kind of client, so it is never silently
+  ignored; the synchronous `openai.OpenAI` is a `TypeError`, because the library is async and running it in a thread would break that. `Text2Cypher(client, llm, *, model=None, ...)` and
+  `LLMSchemaFilter(llm=None, *, min_entities=20, model=None)` take it; for the filter, `llm=None` plus `model` asks the main client with another model (`OpenAIClient.with_model`, a copy that
+  shares the SDK client and every setting), which needs an OpenAI client as the main one. `OpenAIClient` keeps its name and is the full-control form: the options live there.
 - `OpenAIClient(model, *, client=None, temperature=0, system_role=True, timeout=120.0, max_retries=None)` uses `AsyncOpenAI` (Chat Completions); pass your own client
   for an OpenAI-compatible server, and `temperature=None` for a model that only accepts its own. The SDK's default timeout is 10 minutes and a question makes up to a dozen calls, so
   the client sets 2 minutes through `with_options` (a copy that shares the connection pool, so it also applies to a client you pass; `None` leaves that client's own). Retries are the
