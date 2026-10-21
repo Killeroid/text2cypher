@@ -2,6 +2,12 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Added
+
+- `examples/full_tour.py`: a tour of the library with the OpenAI SDK (`model="gpt-4o"`), the LLM schema filter, skills (the ones that ship and one of your own), execution and the other options, over questions that return values, nodes, lists of nodes, relationships, paths and nested nodes, with the nodes as plain objects and as your own classes. A test runs it with a scripted model on the embedded FalkorDB.
+
 ## 2.1.0 - 2026-10-21
 
 Skills of your own, and what a query returns as plain Python objects. Nothing breaks: both are new and opt-in, and the public API of 2.0.0 is unchanged.
