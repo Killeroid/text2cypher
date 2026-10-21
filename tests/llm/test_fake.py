@@ -1,6 +1,6 @@
 import pytest
 
-from text2cypher.llm import Completion, FakeLLM, Usage
+from text2cypher.llm import Completion, FakeLLM, Message, Usage
 
 pytestmark = pytest.mark.anyio
 
@@ -25,3 +25,15 @@ async def test_fake_llm_fails_when_it_runs_out_of_replies():
 
     with pytest.raises(RuntimeError, match="no reply left"):
         await llm.complete("s", "u")
+
+
+async def test_fake_llm_records_the_turns_it_was_given_and_the_last_is_the_user_text():
+    llm = FakeLLM(["a", "b"])
+    turns = [Message("user", "q"), Message("assistant", "r"), Message("user", "fix")]
+
+    await llm.chat("system", turns)
+    await llm.complete("system", "one")
+
+    assert llm.calls[0].user == "fix"
+    assert llm.calls[0].messages == tuple(turns)
+    assert llm.calls[1].messages == (Message("user", "one"),)

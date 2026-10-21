@@ -8,6 +8,7 @@ from text2cypher import llm, schema
 
 PUBLIC = {
     "text2cypher": {
+        "AsyncChatClient",
         "AsyncLLMClient",
         "Attempt",
         "Completion",
@@ -16,6 +17,7 @@ PUBLIC = {
         "GraphNotFoundError",
         "GraphSchema",
         "Issue",
+        "Message",
         "OpenAIClient",
         "Records",
         "Result",
@@ -27,10 +29,12 @@ PUBLIC = {
         "filter_schema",
     },
     "text2cypher.llm": {
+        "AsyncChatClient",
         "AsyncLLMClient",
         "Call",
         "Completion",
         "FakeLLM",
+        "Message",
         "OpenAIClient",
         "Usage",
     },
@@ -54,7 +58,15 @@ def test_each_public_namespace_exports_exactly_its_listed_names():
 
 
 def test_the_public_names_of_the_subpackages_are_the_same_objects_as_the_top_level_ones():
-    for name in ("AsyncLLMClient", "Completion", "FakeLLM", "OpenAIClient", "Usage"):
+    for name in (
+        "AsyncChatClient",
+        "AsyncLLMClient",
+        "Completion",
+        "FakeLLM",
+        "Message",
+        "OpenAIClient",
+        "Usage",
+    ):
         assert getattr(text2cypher, name) is getattr(llm, name)
     for name in ("GraphSchema", "SchemaFilter", "filter_schema"):
         assert getattr(text2cypher, name) is getattr(schema, name)

@@ -1,29 +1,21 @@
 """The loop: generate a query, validate it, correct it, and escalate the schema."""
 
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import replace
 
 from text2cypher._config import Config
-from text2cypher._generation import Generation, correct_cypher, generate_cypher
+from text2cypher._generation import Round, generate_cypher
 from text2cypher._results import Attempt, Result, SchemaScope
-from text2cypher._validation import Issue, ValidationResult
-from text2cypher.llm import AsyncLLMClient
+from text2cypher._validation import ValidationResult
+from text2cypher.llm import AsyncChatClient, AsyncLLMClient
 from text2cypher.schema import GraphSchema, SchemaFilter
-
-
-@dataclass(frozen=True, slots=True)
-class _Failed:
-    """A query that did not pass validation, and why, to be corrected."""
-
-    query: str
-    issues: tuple[Issue, ...]
 
 
 async def run_workflow(
     question: str,
     schema: GraphSchema,
     *,
-    llm: AsyncLLMClient,
+    llm: AsyncChatClient | AsyncLLMClient,
     validate: Callable[[str], Awaitable[ValidationResult]],
     config: Config,
     schema_filter: SchemaFilter | None = None,
@@ -38,13 +30,16 @@ async def run_workflow(
     An empty query is the LLM declining. With the filtered schema that may be the
     filter's doing, so the same request is made again with the full schema, once and
     without costing a correction. Declining on the full schema ends the loop.
+
+    Each correction is a request that carries every query written so far with what was
+    wrong with it, so the LLM does not repeat a mistake it was told about.
     """
     filtered = None if schema_filter is None else schema_filter(schema, question)
     if filtered == schema:
         filtered = None
     attempts: list[Attempt] = []
-    # What the next request corrects; None for the first query
-    failed: _Failed | None = None
+    # The queries written so far that failed, which the next request corrects
+    rounds: list[Round] = []
     corrections = 0
     # The LLM declined on the filtered schema, which is no longer used
     escalated = False
@@ -53,8 +48,9 @@ async def run_workflow(
         scope, used = _choose_schema(
             schema, filtered, config, corrections=corrections, escalated=escalated
         )
-        generation = await _write(
-            llm, question, used, failed, parameterize=config.use_parameters
+        rounds = _with_schema_note(rounds, attempts, scope)
+        generation = await generate_cypher(
+            llm, used, question, rounds, parameterize=config.use_parameters
         )
         if not generation.query:
             attempts.append(Attempt("", None, scope, generation.usage))
@@ -70,7 +66,7 @@ async def run_workflow(
         if corrections == config.total_attempts:
             return Result(question, "failed", tuple(attempts))
         corrections += 1
-        failed = _Failed(generation.query, validation.issues)
+        rounds.append(Round(generation.query, validation.issues))
 
 
 def _choose_schema(
@@ -92,17 +88,16 @@ def _choose_schema(
     return "full", schema
 
 
-async def _write(
-    llm: AsyncLLMClient,
-    question: str,
-    schema: GraphSchema,
-    failed: _Failed | None,
-    *,
-    parameterize: bool,
-) -> Generation:
-    """The first query, or a correction of the one that failed."""
-    if failed is None:
-        return await generate_cypher(llm, schema, question, parameterize=parameterize)
-    return await correct_cypher(
-        llm, schema, question, failed.query, failed.issues, parameterize=parameterize
-    )
+def _with_schema_note(
+    rounds: list[Round], attempts: Sequence[Attempt], scope: SchemaScope
+) -> list[Round]:
+    """``rounds``, with the last one marked to tell the LLM that the schema is now the
+    whole graph, the first time that is so after queries written with a part of it."""
+    if (
+        scope == "full"
+        and rounds
+        and not any(r.schema_note for r in rounds)
+        and any(a.schema_scope == "filtered" and a.query for a in attempts)
+    ):
+        return [*rounds[:-1], replace(rounds[-1], schema_note=True)]
+    return rounds

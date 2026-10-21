@@ -1,16 +1,17 @@
 """Ask an LLM for a Cypher query, or to correct one."""
 
-from collections.abc import Iterable
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import cast
 
-from text2cypher._generation.extract import extract_cypher
-from text2cypher._generation.prompts import (
-    corrector_user,
-    generator_system,
-    generator_user,
+from text2cypher._generation.conversation import (
+    Round,
+    chat_messages,
+    folded_message,
 )
-from text2cypher._validation import Issue
-from text2cypher.llm import AsyncLLMClient, Usage
+from text2cypher._generation.extract import extract_cypher
+from text2cypher._generation.prompts import generator_system
+from text2cypher.llm import AsyncChatClient, AsyncLLMClient, Completion, Usage
 from text2cypher.schema import GraphSchema
 
 
@@ -23,41 +24,28 @@ class Generation:
 
 
 async def generate_cypher(
-    llm: AsyncLLMClient,
+    llm: AsyncChatClient | AsyncLLMClient,
     schema: GraphSchema,
     question: str,
+    rounds: Sequence[Round] = (),
     *,
     parameterize: bool = False,
 ) -> Generation:
-    """A query for ``question`` over ``schema``; empty if the LLM says it has none."""
-    return await _ask(
-        llm,
-        generator_system(schema, parameterize=parameterize),
-        generator_user(question),
-    )
+    """A query for ``question`` over ``schema``; empty if the LLM says it has none.
 
-
-async def correct_cypher(
-    llm: AsyncLLMClient,
-    schema: GraphSchema,
-    question: str,
-    query: str,
-    issues: Iterable[Issue],
-    *,
-    parameterize: bool = False,
-) -> Generation:
-    """A corrected ``query``; empty if the LLM says the question cannot be answered.
-
-    A correction uses the same system prompt as the first query; only the user
-    message differs.
+    ``rounds`` are the queries it wrote before that had to be corrected, oldest first.
+    Each correction uses the same system prompt as the first query. A client that has
+    ``chat`` is given the conversation as turns; one with only ``complete`` is given it
+    as one message.
     """
-    return await _ask(
-        llm,
-        generator_system(schema, parameterize=parameterize),
-        corrector_user(question, query, issues, schema, parameterize=parameterize),
-    )
-
-
-async def _ask(llm: AsyncLLMClient, system: str, user: str) -> Generation:
-    completion = await llm.complete(system, user)
+    system = generator_system(schema, parameterize=parameterize)
+    chat = getattr(llm, "chat", None)
+    if callable(chat):
+        completion: Completion = await chat(
+            system, chat_messages(question, rounds, schema, parameterize=parameterize)
+        )
+    else:
+        completion = await cast("AsyncLLMClient", llm).complete(
+            system, folded_message(question, rounds, schema, parameterize=parameterize)
+        )
     return Generation(extract_cypher(completion.text), completion.usage)

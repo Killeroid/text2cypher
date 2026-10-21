@@ -1,7 +1,8 @@
 """What the rest of the library needs from an LLM."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import NamedTuple, Protocol
+from typing import Literal, NamedTuple, Protocol
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,8 +36,40 @@ class Completion(NamedTuple):
     usage: Usage | None
 
 
+class Message(NamedTuple):
+    """One turn of a conversation.
+
+    Attributes:
+        role: ``"user"`` for what the library asks, ``"assistant"`` for what the model
+            replied earlier.
+        content: The text of the turn.
+    """
+
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class AsyncChatClient(Protocol):
+    """A chat model that is given the conversation so far.
+
+    This is the method the library calls when a client has it: a correction is then
+    the earlier queries the model wrote, each followed by what was wrong with it. A
+    client that has only ``complete`` still works (see ``AsyncLLMClient``).
+    """
+
+    async def chat(self, system: str, messages: Sequence[Message]) -> Completion:
+        """Ask the model, with a system message and the turns so far (the first and the
+        last are from the user), and return its reply."""
+        ...
+
+
 class AsyncLLMClient(Protocol):
-    """A stateless chat model: every call is one system and one user message."""
+    """A stateless chat model: every call is one system and one user message.
+
+    A client with this method alone is given a conversation as one user message that
+    lists the earlier attempts; add ``chat`` (see ``AsyncChatClient``) to be given real
+    turns.
+    """
 
     async def complete(self, system: str, user: str) -> Completion:
         """Ask the model, with a system message and a user message, and return its reply."""

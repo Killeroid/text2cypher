@@ -40,9 +40,9 @@ The query is valid when the syntax is fine and no validator reported an issue. S
 
 ## Correcting
 
-When there are problems, the LLM is asked again with the same system message and a user message that holds the question, the query that failed, and the problems as a list. A problem that only repeats another (a property of a label already reported as unknown) is left out, and when only the direction of a path was wrong the message says what the path should be. The LLM answers with a new query, which is validated in turn.
+When there are problems, the LLM is asked again with the same system message and the conversation so far: the question, then each query it wrote that failed, followed by a message that lists what was wrong with it. A problem that only repeats another (a property of a label already reported as unknown) is left out, and when only the direction of a path was wrong the message says what the path should be. The LLM answers with a new query, which is validated in turn. Because it is given every earlier attempt with its problems, it does not repeat a mistake it was told about. A client that cannot be given turns is given the same conversation as one message (see [](llm.md)).
 
-The first `attempts_w_filtered` corrections use the filtered schema, the later ones the full schema, until `total_attempts` corrections have been made. The first query is not a correction.
+The first `attempts_w_filtered` corrections use the filtered schema, the later ones the full schema, until `total_attempts` corrections have been made. The first query is not a correction. When the schema changes from the filtered to the full one, the conversation goes on with the earlier turns, and the first message after the change says that the schema now lists the whole graph.
 
 ## When the LLM declines
 

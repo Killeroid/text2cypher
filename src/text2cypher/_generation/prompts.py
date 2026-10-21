@@ -1,9 +1,5 @@
-"""The prompts: what the LLM is told to write a query, and to correct one."""
+"""The prompts: what the LLM is told to write a query."""
 
-from collections.abc import Iterable
-
-from text2cypher._generation.problems import problems
-from text2cypher._validation import Issue
 from text2cypher.schema import GraphSchema, render_schema
 
 # The queries the rules and the examples show. tests/generation/test_prompt_rules.py runs each
@@ -139,29 +135,3 @@ def generator_system(schema: GraphSchema, *, parameterize: bool = False) -> str:
 
 def generator_user(question: str) -> str:
     return f"Question: {question}"
-
-
-def corrector_user(
-    question: str,
-    query: str,
-    issues: Iterable[Issue],
-    schema: GraphSchema,
-    *,
-    parameterize: bool = False,
-) -> str:
-    """The user message that asks the LLM to fix ``query``, given what is wrong with it.
-
-    A correction uses the same system prompt as the first attempt; it differs only in
-    that the question comes with the query that failed and its problems, worded with
-    the help of ``schema`` (the one the query was written for).
-    """
-    return (
-        f"Question: {question}\n\n"
-        f"This query was written for the question, but it has problems:\n\n"
-        f"```cypher\n{query}\n```\n\n"
-        f"Problems:\n{problems(issues, schema, parameterized=parameterize)}\n\n"
-        "Write a corrected query that fixes the problems and keeps what already "
-        "works. Reply with the query in one ```cypher code block and nothing else. "
-        "If the question cannot be answered with this schema, reply with an empty "
-        "code block."
-    )

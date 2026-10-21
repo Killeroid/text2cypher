@@ -2,17 +2,35 @@ import pytest
 from cypher_guardrail import issues as cg
 from support import FILM_SCHEMA, make_issue
 
-from text2cypher._generation import Generation, correct_cypher, generate_cypher
-from text2cypher._generation.prompts import (
-    corrector_user,
-    generator_system,
-    generator_user,
-)
-from text2cypher.llm import Completion, FakeLLM, Usage
+from text2cypher._generation import Generation, Round, generate_cypher
+from text2cypher._generation.conversation import chat_messages, folded_message
+from text2cypher._generation.prompts import generator_system, generator_user
+from text2cypher.llm import Completion, FakeLLM, Message, Usage
 
 pytestmark = pytest.mark.anyio
 
 SCHEMA = FILM_SCHEMA
+ROUND = Round(
+    "MATCH (p:Persn) RETURN p",
+    (make_issue(cg.UNKNOWN_LABEL, "No label.", label="Persn"),),
+)
+
+
+class CompleteOnly:
+    """A client written for ``complete`` alone, as every client was before ``chat``."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    async def complete(self, system: str, user: str) -> Completion:
+        self.calls.append((system, user))
+        return Completion("```cypher\nMATCH (p:Person) RETURN p.name\n```", None)
+
+
+class HasAChatAttributeThatIsNotAMethod(CompleteOnly):
+    """Like an SDK client, whose ``chat`` is a namespace of resources."""
+
+    chat = object()
 
 
 async def test_generate_asks_with_the_schema_and_the_question():
@@ -29,7 +47,7 @@ async def test_generate_asks_with_the_schema_and_the_question():
     assert generation == Generation("MATCH (p:Person) RETURN p.name", Usage(7, 3))
     [call] = llm.calls
     assert call.system == generator_system(SCHEMA)
-    assert call.user == generator_user("Who is there?")
+    assert call.messages == (Message("user", generator_user("Who is there?")),)
 
 
 async def test_an_empty_block_is_an_empty_query():
@@ -38,20 +56,37 @@ async def test_an_empty_block_is_an_empty_query():
     assert await generate_cypher(llm, SCHEMA, "Delete everyone") == Generation("", None)
 
 
-async def test_correct_asks_with_the_same_schema_prompt_and_the_problems():
-    problems = [make_issue(cg.UNKNOWN_LABEL, "No label.", label="Persn")]
+async def test_a_correction_uses_the_same_system_prompt_and_the_turns_so_far():
     llm = FakeLLM(["```cypher\nMATCH (p:Person) RETURN p.name\n```"])
 
-    generation = await correct_cypher(
-        llm, SCHEMA, "Who is there?", "MATCH (p:Persn) RETURN p", problems
-    )
+    generation = await generate_cypher(llm, SCHEMA, "Who is there?", [ROUND])
 
     assert generation == Generation("MATCH (p:Person) RETURN p.name", None)
     [call] = llm.calls
     assert call.system == generator_system(SCHEMA)
-    assert call.user == corrector_user(
-        "Who is there?", "MATCH (p:Persn) RETURN p", problems, SCHEMA
-    )
+    assert list(call.messages) == chat_messages("Who is there?", [ROUND], SCHEMA)
+
+
+async def test_a_client_with_only_complete_is_given_the_conversation_as_one_message():
+    llm = CompleteOnly()
+
+    generation = await generate_cypher(llm, SCHEMA, "Who is there?", [ROUND])
+
+    assert generation == Generation("MATCH (p:Person) RETURN p.name", None)
+    assert llm.calls == [
+        (
+            generator_system(SCHEMA),
+            folded_message("Who is there?", [ROUND], SCHEMA),
+        )
+    ]
+
+
+async def test_a_chat_attribute_that_cannot_be_called_is_not_a_chat_method():
+    llm = HasAChatAttributeThatIsNotAMethod()
+
+    await generate_cypher(llm, SCHEMA, "Who is there?")
+
+    assert llm.calls == [(generator_system(SCHEMA), generator_user("Who is there?"))]
 
 
 async def test_a_question_that_is_an_instruction_only_goes_in_the_user_message():

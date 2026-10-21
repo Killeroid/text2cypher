@@ -11,7 +11,7 @@ from text2cypher._results import Result
 from text2cypher._schema_source import SchemaSource
 from text2cypher._validation import QueryValidator
 from text2cypher._workflow import run_workflow
-from text2cypher.llm import AsyncLLMClient
+from text2cypher.llm import AsyncChatClient, AsyncLLMClient
 from text2cypher.schema import SchemaFilter, filter_schema, schema_from_snapshot
 
 
@@ -21,7 +21,9 @@ class Text2Cypher:
     Args:
         client: A ``falkordb.asyncio`` client. It is bound to one event loop, so use
             one ``Text2Cypher`` per loop.
-        llm: The model that writes and corrects the queries.
+        llm: The model that writes and corrects the queries. A client with ``chat`` is
+            given each correction as the turns of a conversation; one with only
+            ``complete``, as one message.
         config: The limits of the correction loop, whether to execute, and how long a
             graph's schema is kept.
         schema_filter: Keeps what a question needs of the graph's schema; by default
@@ -32,7 +34,7 @@ class Text2Cypher:
     def __init__(
         self,
         client: FalkorDB,
-        llm: AsyncLLMClient,
+        llm: AsyncChatClient | AsyncLLMClient,
         *,
         config: Config | None = None,
         schema_filter: SchemaFilter | None = filter_schema,

@@ -1,14 +1,11 @@
 from dataclasses import replace
 
-import pytest
-from cypher_guardrail import issues as cg
-from support import FILM_SCHEMA, make_issue
+from support import FILM_SCHEMA
 
 from text2cypher import GraphSchema
 from text2cypher._generation.prompts import (
     FULLTEXT_EXAMPLE,
     PARAMETER_EXAMPLE,
-    corrector_user,
     generator_system,
     generator_user,
 )
@@ -36,39 +33,6 @@ def test_generator_system_says_so_when_the_graph_is_empty():
 
 def test_generator_user_is_the_question():
     assert generator_user("Who acted in Heat?") == "Question: Who acted in Heat?"
-
-
-def test_corrector_user_has_the_question_the_query_and_the_problems():
-    prompt = corrector_user(
-        "Who acted in Heat?",
-        "MATCH (p:Persn) RETURN p.name",
-        [
-            make_issue(
-                cg.UNKNOWN_LABEL, "The label Persn is not in the graph.", label="Persn"
-            )
-        ],
-        SCHEMA,
-    )
-
-    assert "Question: Who acted in Heat?" in prompt
-    assert "```cypher\nMATCH (p:Persn) RETURN p.name\n```" in prompt
-    assert "- There is no label `Persn` in the schema." in prompt
-    assert "Did you mean `Person`?" in prompt
-
-
-def test_corrector_user_lists_a_repeated_problem_once():
-    same = make_issue(cg.UNKNOWN_LABEL, "The label X is not in the graph.", label="X")
-
-    prompt = corrector_user("q", "MATCH (x:X) RETURN x", [same, same], SCHEMA)
-
-    assert prompt.count("no label `X`") == 1
-
-
-@pytest.mark.parametrize(
-    "prompt", [generator_system(SCHEMA), corrector_user("q", "r", [], SCHEMA)]
-)
-def test_prompts_ask_for_one_cypher_block(prompt: str):
-    assert "```cypher" in prompt
 
 
 def with_indexes(*indexes: Index) -> GraphSchema:

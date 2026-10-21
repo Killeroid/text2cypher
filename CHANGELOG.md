@@ -2,6 +2,20 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Added
+
+- `AsyncChatClient` and `Message`: a client with a `chat(system, messages)` method is given a correction as the turns of a conversation. `OpenAIClient` and `FakeLLM` have it, and a
+  `FakeLLM` call records every turn (`Call.messages`). A client with only `complete(system, user)` keeps working: it is given the same conversation as one user message.
+
+### Changed
+
+- A correction now carries every query the LLM wrote so far with what was wrong with it, not only the last one, so it does not repeat a mistake it was told about. Each failed query is an
+  assistant turn followed by a user turn with its problems, and the failed query is no longer quoted again in the turn about it.
+- When the schema changes from the filtered to the full one, the earlier turns are kept and the first turn after the change tells the LLM that the schema now lists the whole graph.
+- `Call` (what `FakeLLM` records) has a third field, `messages`, and `user` is the text of the last user turn.
+
 ## 1.1.0 - 2026-10-20
 
 ### Added

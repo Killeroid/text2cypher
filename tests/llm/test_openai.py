@@ -4,7 +4,7 @@ import httpx2 as httpx
 import pytest
 from openai import AsyncOpenAI
 
-from text2cypher.llm import Completion, OpenAIClient, Usage
+from text2cypher.llm import Completion, Message, OpenAIClient, Usage
 
 pytestmark = pytest.mark.anyio
 
@@ -93,4 +93,45 @@ async def test_openai_client_can_send_one_user_message_for_a_model_without_a_sys
 
     assert requests[0]["messages"] == [
         {"role": "user", "content": "be brief\n\nwhich movies?"}
+    ]
+
+
+async def test_openai_client_sends_every_turn_of_a_conversation_after_the_system_message():
+    client, requests = _openai_client(_chat_reply("x", None))
+    llm = OpenAIClient("test-model", client=client)
+
+    await llm.chat(
+        "be brief",
+        [
+            Message("user", "which movies?"),
+            Message("assistant", "```cypher\nRETURN 1\n```"),
+            Message("user", "that has problems"),
+        ],
+    )
+
+    assert requests[0]["messages"] == [
+        {"role": "system", "content": "be brief"},
+        {"role": "user", "content": "which movies?"},
+        {"role": "assistant", "content": "```cypher\nRETURN 1\n```"},
+        {"role": "user", "content": "that has problems"},
+    ]
+
+
+async def test_a_model_without_a_system_role_gets_the_system_text_in_the_first_turn():
+    client, requests = _openai_client(_chat_reply("x", None))
+    llm = OpenAIClient("test-model", client=client, system_role=False)
+
+    await llm.chat(
+        "be brief",
+        [
+            Message("user", "which movies?"),
+            Message("assistant", "RETURN 1"),
+            Message("user", "that has problems"),
+        ],
+    )
+
+    assert requests[0]["messages"] == [
+        {"role": "user", "content": "be brief\n\nwhich movies?"},
+        {"role": "assistant", "content": "RETURN 1"},
+        {"role": "user", "content": "that has problems"},
     ]

@@ -1,16 +1,18 @@
 """An LLM client for OpenAI's Chat Completions API (and compatible servers)."""
 
+from collections.abc import Sequence
+
 from openai import AsyncOpenAI, omit
 from openai.types.chat import ChatCompletionMessageParam
 
-from text2cypher.llm._base import Completion, Usage
+from text2cypher.llm._base import Completion, Message, Usage
 
 
 class OpenAIClient:
-    """Asks an OpenAI chat model, one system and one user message per call.
+    """Asks an OpenAI chat model with a system message and the turns of the conversation.
 
     A model that has no system role (some served by compatible servers) needs
-    ``system_role=False``: the system text then goes first in the one user message.
+    ``system_role=False``: the system text then goes first in the first user message.
 
     Args:
         model: The model to ask. There is no default: the right one depends on the
@@ -18,8 +20,8 @@ class OpenAIClient:
         client: The ``AsyncOpenAI`` to use, e.g. one with another ``base_url`` for a
             compatible server. By default one is made from the environment.
         temperature: ``None`` leaves it out, for models that only accept their own.
-        system_role: ``False`` sends one user message, the system text followed by the
-            user text, for a model that has no system role.
+        system_role: ``False`` puts the system text before the first user message's text,
+            for a model that has no system role.
     """
 
     def __init__(
@@ -36,10 +38,14 @@ class OpenAIClient:
         self._system_role = system_role
 
     async def complete(self, system: str, user: str) -> Completion:
+        """Ask the model with one user message; see ``chat``."""
+        return await self.chat(system, [Message("user", user)])
+
+    async def chat(self, system: str, messages: Sequence[Message]) -> Completion:
         """Ask the model, and return its reply and, when the API reports it, the tokens used."""
         response = await self._client.chat.completions.create(
             model=self._model,
-            messages=self._messages(system, user),
+            messages=self._messages(system, messages),
             temperature=self._temperature,
         )
         used = response.usage
@@ -50,10 +56,16 @@ class OpenAIClient:
             else Usage(used.prompt_tokens, used.completion_tokens),
         )
 
-    def _messages(self, system: str, user: str) -> list[ChatCompletionMessageParam]:
-        if self._system_role:
-            return [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ]
-        return [{"role": "user", "content": f"{system}\n\n{user}"}]
+    def _messages(
+        self, system: str, turns: Sequence[Message]
+    ) -> list[ChatCompletionMessageParam]:
+        if not self._system_role:
+            first = Message("user", f"{system}\n\n{turns[0].content}")
+            return [_param(first), *map(_param, turns[1:])]
+        return [{"role": "system", "content": system}, *map(_param, turns)]
+
+
+def _param(turn: Message) -> ChatCompletionMessageParam:
+    if turn.role == "user":
+        return {"role": "user", "content": turn.content}
+    return {"role": "assistant", "content": turn.content}

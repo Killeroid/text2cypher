@@ -78,10 +78,11 @@ src/text2cypher/
 │   ├── validator.py     QueryValidator: the three cypher-guardrail async validators
 │   └── issues.py        Issue, Source, ValidationResult, drop_repeated_property_issues
 └── _generation/
-    ├── prompts.py       generator system prompt (rules built from lists), question and corrector messages
+    ├── prompts.py       generator system prompt (rules built from lists) and the question message
+    ├── conversation.py  Round, the turns of a conversation (chat_messages) and the same as one message (folded_message)
     ├── problems.py      the issues of a query worded for the LLM, one handler per issue code
     ├── extract.py       extract_cypher: first fenced block, else the trimmed reply
-    └── generate.py      generate_cypher, correct_cypher, Generation
+    └── generate.py      generate_cypher (a first query or a correction), Generation
 tests/                   mirrors src/: llm/ schema/ validation/ generation/ trial/, and test_workflow,
                          test_config, test_pipeline, test_execution, test_examples, test_public_api;
                          support.py, conftest.py
@@ -202,9 +203,14 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 
 ### LLM (`llm/`)
 
-- `AsyncLLMClient` is a one-method, stateless protocol: `complete(system, user) -> Completion(text, usage)`, with
-  `usage: Usage | None`. A correction carries the earlier query and its issues inside the single user message, so
-  the library is not tied to one provider's message format. A multi-turn list was considered and not taken.
+- Two stateless protocols. `AsyncChatClient` has `chat(system, messages) -> Completion(text, usage)`, with
+  `messages: Sequence[Message]` (`Message(role, content)`, roles `user` and `assistant`, first and last from the user) and
+  `usage: Usage | None`; the library calls it when a client has a callable `chat`. `AsyncLLMClient` keeps its one method,
+  `complete(system, user)`, so a client written for 1.x still works: it is given the same conversation as one user
+  message. Both are public and additive, so nothing breaks. A client with both gets `chat`; an attribute named `chat`
+  that is not callable (an SDK client's namespace) does not count. The choice is made in `generate_cypher`, not in an
+  adapter, because the one-message form lists the attempts and ends with the instruction once, which a generic
+  adapter over turns could not do without parsing the prompt text.
 - `OpenAIClient(model, *, client=None, temperature=0)` uses `AsyncOpenAI` (Chat Completions); pass your own client
   for an OpenAI-compatible server, and `temperature=None` for a model that only accepts its own. `FakeLLM` replays
   scripted replies and records its calls, for tests.
@@ -218,8 +224,17 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   loop recovers, and a heuristic that declined it could decline a valid query.
 - **Prompts** are our own wording. The generator system prompt has the task, a short FalkorDB rules block, two
   examples on another schema and the rendered schema; the user message is only the question, so the question is
-  never in the system prompt and the system prompt has a stable prefix. The corrector reuses that system prompt and
-  sends the question, the failed query in a fence and its issues as a list in the user message.
+  never in the system prompt and the system prompt has a stable prefix. A correction reuses that system prompt and
+  continues the conversation (`_generation/conversation.py`): the question, then for every failed query the LLM wrote
+  that query as an assistant turn in a fence and a user turn that lists its issues and asks for a corrected query
+  (the failed query is not quoted again, it is the turn before). Each round keeps its issues, not their wording,
+  and the wording is made for each request with that request's schema, so the "did you mean" hints always name what the
+  system message lists. When the schema changes from filtered to full, the system message is swapped and the turns
+  stay; the first user turn after the change opens with a line saying that the schema now lists the whole graph (once,
+  and only when a query was written with the filtered one: a decline on the first query has nothing to explain). A
+  declined reply (an empty block) is never a turn: it is asked again with the same turns and the full schema.
+  A client with only `complete` gets the conversation as one user message: the question, the note if any, "Earlier
+  attempts, oldest first" with each query and its problems, and the instruction once at the end.
 - **Rules block**: read-only; write values inline and never `$param` (a bare `$n` is `ParameterNotProvided`), unless
   `Config.use_parameters` swaps that rule for one that asks for the values in a `CYPHER` header (see Parameters); for a
   shortest path between two nodes use `algo.SPpaths`, since FalkorDB supports `shortestPath` only in `WITH` or
@@ -240,7 +255,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   A VECTOR index gets "do not call `db.idx.vector.*`": a vector query is valid (the validator does not stop it) and the
   model has no embedding to give it.
 - The question is data, never instructions: anything that is not a request for a query gets an empty block.
-- The corrector words each issue from its structured fields and the schema the query was written for
+- A correction turn words each issue from its structured fields and the schema of the request
   (`_generation/problems.py`), not from the validator's description, which is written for developers (some is
   FalkorDB's own error text): an unknown label, relationship type or property says so plainly and offers the closest
   name as a "did you mean" when it is a likely typo (very similar, or fairly similar and starting alike: `rate` for
@@ -334,7 +349,7 @@ Each item says what would bring it back.
   prompt caching); a numbered `code: description` error format for the corrector.
 - Example values in the schema (they need separate queries, and send graph data to the LLM provider).
 - Dynamic skills (the model reads guidance through tool calls: needs a tool-calling protocol, which a stateless
-  `complete(system, user)` does not have); answer synthesis; multi-turn correction.
+  `chat(system, messages)` does not have); answer synthesis.
 - A model without a system role: an option on `OpenAIClient` that sends one user message.
 
 **Other**

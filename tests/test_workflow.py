@@ -1,13 +1,12 @@
+from dataclasses import replace
+
 import pytest
 from support import FILM_SCHEMA, VALID, ScriptedValidator, invalid, reply
 
 from text2cypher._config import Config
-from text2cypher._generation import generate_cypher
-from text2cypher._generation.prompts import (
-    corrector_user,
-    generator_system,
-    generator_user,
-)
+from text2cypher._generation import Round, generate_cypher
+from text2cypher._generation.conversation import SCHEMA_NOTE, chat_messages
+from text2cypher._generation.prompts import generator_system, generator_user
 from text2cypher._workflow import run_workflow
 from text2cypher.llm import Completion, FakeLLM, Usage
 from text2cypher.schema import GraphSchema
@@ -56,9 +55,9 @@ async def test_a_query_with_problems_is_corrected_with_them_in_the_message():
     ]
     assert result.attempts[0].validation == problem
     assert validate.queries == ["MATCH (p:Persn) RETURN p", "MATCH (p:Person) RETURN p"]
-    assert llm.calls[1] == (
-        generator_system(FULL),
-        corrector_user("Who?", "MATCH (p:Persn) RETURN p", problem.issues, FULL),
+    assert llm.calls[1].system == generator_system(FULL)
+    assert list(llm.calls[1].messages) == chat_messages(
+        "Who?", [Round("MATCH (p:Persn) RETURN p", problem.issues)], FULL
     )
 
 
@@ -294,14 +293,12 @@ async def test_declining_a_correction_on_the_filtered_schema_asks_for_it_on_the_
 
     assert result.status == "valid"
     assert [a.schema_scope for a in result.attempts] == ["filtered", "filtered", "full"]
-    assert [(c.system, c.user) for c in llm.calls[1:]] == [
-        (
-            generator_system(FILTERED),
-            corrector_user("Q", "MATCH (x:X) RETURN x", problem.issues, FILTERED),
-        ),
+    failed = Round("MATCH (x:X) RETURN x", problem.issues)
+    assert [(c.system, list(c.messages)) for c in llm.calls[1:]] == [
+        (generator_system(FILTERED), chat_messages("Q", [failed], FILTERED)),
         (
             generator_system(FULL),
-            corrector_user("Q", "MATCH (x:X) RETURN x", problem.issues, FULL),
+            chat_messages("Q", [replace(failed, schema_note=True)], FULL),
         ),
     ]
     # it was not a correction of its own: the query was corrected once
@@ -338,6 +335,103 @@ async def test_parameters_change_the_system_prompt_of_every_request():
     assert [c.system for c in llm.calls] == [
         generator_system(FULL, parameterize=True)
     ] * 2
-    assert llm.calls[1].user == corrector_user(
-        "Q", "a", invalid("x").issues, FULL, parameterize=True
+    assert list(llm.calls[1].messages) == chat_messages(
+        "Q", [Round("a", invalid("x").issues)], FULL, parameterize=True
     )
+
+
+async def test_each_correction_carries_every_earlier_query_and_its_problems():
+    problems = [invalid(text) for text in ("x", "y", "z")]
+    llm = FakeLLM([reply(q) for q in "abcd"])
+
+    await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(*problems, VALID),
+        config=Config(),
+    )
+
+    rounds = [Round(q, p.issues) for q, p in zip("abc", problems, strict=True)]
+    assert [list(c.messages) for c in llm.calls] == [
+        chat_messages("Q", rounds[:n], FULL) for n in range(4)
+    ]
+    assert [m.role for m in llm.calls[3].messages] == ["user"] + [
+        "assistant",
+        "user",
+    ] * 3
+
+
+async def test_the_llm_is_told_once_that_the_schema_is_now_the_whole_graph():
+    llm = FakeLLM([reply(q) for q in "abcde"])
+
+    await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(*(invalid(q) for q in "abcd"), VALID),
+        config=Config(attempts_w_filtered=1, total_attempts=4),
+        schema_filter=lambda schema, question: FILTERED,
+    )
+
+    # two requests with the filtered schema, then three with the full one
+    users = [[m.content for m in c.messages if m.role == "user"] for c in llm.calls]
+    assert [sum(SCHEMA_NOTE in text for text in turns) for turns in users] == [
+        0,
+        0,
+        1,
+        1,
+        1,
+    ]
+    # it opens the problems of the last query written with the filtered schema
+    assert users[2][-1].startswith(SCHEMA_NOTE)
+    # and it stays where it was, in the turn it was first given
+    assert users[4][2].startswith(SCHEMA_NOTE)
+    assert not users[4][-1].startswith(SCHEMA_NOTE)
+
+
+async def test_there_is_no_note_when_the_schema_never_changed():
+    llm = FakeLLM([reply("a"), reply("b")])
+
+    await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(invalid("x"), VALID),
+        config=Config(),
+    )
+
+    assert all(SCHEMA_NOTE not in m.content for c in llm.calls for m in c.messages)
+
+
+async def test_there_is_no_note_when_the_first_query_was_declined_on_the_filtered_schema():
+    llm = FakeLLM(["```cypher\n```", reply("a")])
+
+    await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(VALID),
+        config=Config(),
+        schema_filter=lambda schema, question: FILTERED,
+    )
+
+    # nothing was written with the filtered schema, so there is nothing to explain
+    assert list(llm.calls[1].messages) == chat_messages("Q", [], FULL)
+
+
+async def test_a_declined_reply_is_not_part_of_the_conversation_that_is_asked_again():
+    problem = invalid("The label X is not in the graph.")
+    llm = FakeLLM([reply("MATCH (x:X) RETURN x"), "```cypher\n```", reply("good")])
+
+    await run_workflow(
+        "Q",
+        FULL,
+        llm=llm,
+        validate=ScriptedValidator(problem, VALID),
+        config=Config(attempts_w_filtered=3, total_attempts=3),
+        schema_filter=lambda schema, question: FILTERED,
+    )
+
+    assert len(llm.calls[2].messages) == len(llm.calls[1].messages)
+    assert [m.role for m in llm.calls[2].messages] == ["user", "assistant", "user"]

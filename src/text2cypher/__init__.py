@@ -13,9 +13,11 @@ from text2cypher._pipeline import Text2Cypher
 from text2cypher._results import Attempt, Records, Result
 from text2cypher._validation import Issue, ValidationResult
 from text2cypher.llm import (
+    AsyncChatClient,
     AsyncLLMClient,
     Completion,
     FakeLLM,
+    Message,
     OpenAIClient,
     Usage,
 )
@@ -27,6 +29,7 @@ except PackageNotFoundError:  # running from a source tree that is not installed
     __version__ = "0+unknown"
 
 __all__ = [
+    "AsyncChatClient",
     "AsyncLLMClient",
     "Attempt",
     "Completion",
@@ -35,6 +38,7 @@ __all__ = [
     "GraphNotFoundError",
     "GraphSchema",
     "Issue",
+    "Message",
     "OpenAIClient",
     "Records",
     "Result",
