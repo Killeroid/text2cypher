@@ -7,7 +7,13 @@ from redis.exceptions import RedisError
 
 from text2cypher._config import Config
 from text2cypher._execution import Execution
-from text2cypher._generation import Generation, Round, fix_typos, generate_cypher
+from text2cypher._generation import (
+    Generation,
+    Round,
+    fix_typos,
+    generate_cypher,
+    repair_header,
+)
 from text2cypher._results import (
     Attempt,
     DatabaseError,
@@ -20,7 +26,8 @@ from text2cypher.llm import AsyncChatClient, AsyncLLMClient, Usage
 from text2cypher.schema import GraphSchema, SchemaFilter
 
 # A wrong label stops the validators from checking its properties, so a query with both can
-# need a second round of fixes; a third is for the rare case of another layer
+# need a second round of fixes; a third is for the rare case of another layer. The header of a
+# query with parameters is repaired first, because a syntax error hides every other problem
 _FIX_ROUNDS = 3
 
 
@@ -87,7 +94,12 @@ async def run_workflow(
 
         try:
             checked, validation = await _check(
-                generation, scope, validate, schema, autofix=config.autofix_typos
+                generation,
+                scope,
+                validate,
+                schema,
+                header=config.use_parameters,
+                typos=config.autofix_typos,
             )
         except RedisError as error:
             # The query was written and paid for: it is kept, with no validation
@@ -135,23 +147,28 @@ async def _check(
     validate: Callable[[str], Awaitable[ValidationResult]],
     schema: GraphSchema,
     *,
-    autofix: bool,
+    header: bool,
+    typos: bool,
 ) -> tuple[list[Attempt], ValidationResult]:
     """The attempt for the query the LLM wrote, validated, and the validation that counts.
 
-    With ``autofix``, a query that did not pass gets its misspelled names replaced
-    (without the LLM, with the full schema) and is validated again, up to a few times
-    because fixing one kind of name can show another. If it passes, it follows as an
-    attempt of its own and its validation is the one that counts; if it never does, it
-    is dropped and the query the LLM wrote stands.
+    A query that did not pass can be fixed without the LLM and validated again, up to a few
+    times because fixing one thing can show another: with ``header``, its parameter header
+    is written the way FalkorDB wants it (that changes nothing about what the query means,
+    so it needs no option), and with ``typos`` its misspelled names are replaced (with the
+    full schema). If it passes, it follows as an attempt of its own and its validation is
+    the one that counts; if it never does, it is dropped and the query the LLM wrote stands.
     """
     validation = await validate(generation.query)
     attempt = Attempt(generation.query, validation, scope, generation.usage)
-    if validation.valid or not autofix:
+    if validation.valid or not (header or typos):
         return [attempt], validation
     query, now = generation.query, validation
     for _ in range(_FIX_ROUNDS):
-        if (fixed := fix_typos(query, now.issues, schema)) is None:
+        fixed = (repair_header(query) if header else None) or (
+            fix_typos(query, now.issues, schema) if typos else None
+        )
+        if fixed is None:
             break
         query, now = fixed, await validate(fixed)
         if now.valid:

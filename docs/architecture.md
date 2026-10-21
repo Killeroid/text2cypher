@@ -296,7 +296,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   `suggested_path` unless the description already has it. An unknown-property issue is dropped when a label issue names
   the same property. Anything else keeps the description.
 
-### Typos (`_generation/typos.py`)
+### Typos and the header (`_generation/typos.py`, `_generation/header.py`)
 
 - `Config.autofix_typos` (off). After a query fails validation, `fix_typos(query, issues, schema)` replaces each label,
   relationship type and property that the validators report as unknown (`UnknownLabel`, `UnknownRelationshipType`,
@@ -322,6 +322,11 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   `total_attempts=0`. The fixed query is the one that is executed, if execution is on.
 - Off by default because a fix can make a query valid and still not what the question meant (a typo of `Person` that was
   meant to be `Persona`, or a property of the wrong label that happens to be right on another).
+- **The parameter header** (`repair_header`, `use_parameters` only, no option): FalkorDB rejects `CYPHER a='x', b=2` (commas) and a header without `CYPHER`, each a
+  `SyntaxError` that hides every other problem and used to cost a correction (checked on the real server; a lowercase `cypher` and a newline between pairs are accepted). It adds a missing `CYPHER` and writes
+  the pairs with one space between, reading each value as a string, a list, a map or a word, so a comma inside a string or a list is kept; a value that is never closed, or no header, gives
+  nothing. It changes nothing about what the query means, which is why it needs no option and is not like the typos. It shares the typos' path (`_check`): validate, repair, validate again (up to three
+  rounds, the header first), kept only if it passes, as an `Attempt` of its own with `auto_fixed=True` and `Usage(0, 0)`.
 
 ### Errors
 

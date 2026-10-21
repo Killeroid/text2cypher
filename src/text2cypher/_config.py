@@ -29,7 +29,10 @@ class Config:
     By default the LLM writes the values of a query inside it. With ``use_parameters`` it
     puts them in a ``CYPHER`` header before the query (``CYPHER name='Ann' MATCH (p
     {name: $name}) ...``) and uses them as parameters, which FalkorDB can plan once and
-    reuse. The query stays one string: ``Result.query`` runs as it is.
+    reuse. The query stays one string: ``Result.query`` runs as it is. FalkorDB wants the
+    pairs separated by spaces and a ``CYPHER`` in front, so a header with commas, or
+    without it, is written that way without asking the LLM again (that changes nothing about
+    what the query means) and the query is validated again.
 
     With ``autofix_typos``, a label, relationship type or property that the validators
     report as unknown is first replaced, without the LLM, by the one name of the graph it

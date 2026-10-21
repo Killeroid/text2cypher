@@ -576,3 +576,29 @@ async def test_without_the_option_the_same_typos_are_corrected_by_the_llm(
     assert result.status == "valid"
     assert len(llm.calls) == 2
     assert not any(a.auto_fixed for a in result.attempts)
+
+
+async def test_a_parameter_header_with_commas_is_repaired_on_a_real_graph(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    llm = FakeLLM(
+        [
+            reply(
+                "name='Keanu', n=1 MATCH (p:Person {name: $name}) RETURN p.name, $n AS n"
+            )
+        ]
+    )
+
+    result = await Text2Cypher(
+        falkordb_client,
+        llm,
+        config=Config(use_parameters=True, execute=True, example_values=0),
+    ).run("Who is Keanu?", movies_graph)
+
+    assert result.status == "valid"
+    assert len(llm.calls) == 1
+    assert result.query == (
+        "CYPHER name='Keanu' n=1 MATCH (p:Person {name: $name}) RETURN p.name, $n AS n"
+    )
+    assert [a.auto_fixed for a in result.attempts] == [False, True]
+    assert result.records == Records(("p.name", "n"), (("Keanu", 1),))

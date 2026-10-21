@@ -45,9 +45,11 @@ When there are problems, the LLM is asked again with the same system message and
 
 The first `attempts_w_filtered` corrections use the filtered schema, the later ones the full schema, until `total_attempts` corrections have been made. The first query is not a correction. When the schema changes from the filtered to the full one, the conversation goes on with the earlier turns, and the first message after the change says that the schema now lists the whole graph.
 
-### Fixing typos without the LLM
+### Fixing typos and the parameter header without the LLM
 
 With `Config(autofix_typos=True)`, a query that fails validation because it misspells a label, a relationship type or a property (`Persn` for `Person`, `nme` for `name`) is fixed first, without asking the LLM again. Each misspelled name that is a likely typo of exactly one name in your graph is replaced (never inside a string or a comment), and the query is validated again, up to three times: a wrong label hides problems with its properties until it is right. If the fixed query passes, it is the answer. It costs no LLM call and no correction, and the result lists both the query the LLM wrote and the fixed one (`attempt.auto_fixed`). If it does not pass, it is thrown away and the LLM is asked to correct the query it wrote, as usual. A property that exists on another label is never touched. It is off by default, because a fix can pass validation and still not be what the question meant.
+
+With `use_parameters`, the header of the query gets the same treatment, with no option because it cannot change what a query means: FalkorDB wants `CYPHER` and the pairs separated by spaces, so `name='Ann', year=1990 MATCH ...` is a syntax error. It is written as `CYPHER name='Ann' year=1990 MATCH ...` (a comma inside a string or a list is left alone) and the query is validated again, at no cost in LLM calls. It is tried before the names, because a syntax error hides every other problem.
 
 ## When the LLM declines
 

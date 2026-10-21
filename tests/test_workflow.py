@@ -1,6 +1,7 @@
 from dataclasses import replace
 
 import pytest
+from cypher_guardrail import issues as cg
 from support import (
     FILM_SCHEMA,
     RAN,
@@ -763,3 +764,94 @@ async def test_the_fixes_are_given_up_after_three_rounds():
     # none of them passed, so none is kept: the result is the query the LLM wrote
     assert result.query == query
     assert not any(a.auto_fixed for a in result.attempts)
+
+
+HEADER_BROKEN = "name='Ann', year=1990 MATCH (p:Person {name: $name}) RETURN p.name"
+HEADER_FIXED = (
+    "CYPHER name='Ann' year=1990 MATCH (p:Person {name: $name}) RETURN p.name"
+)
+
+
+async def test_a_broken_parameter_header_is_repaired_without_the_llm_and_costs_nothing():
+    llm = FakeLLM([Completion(reply(HEADER_BROKEN), Usage(10, 4))])
+    validate = ScriptedValidator(invalid("syntax", cg.SYNTAX_ERROR), VALID)
+
+    result = await run_workflow(
+        "Who?",
+        FULL,
+        llm=llm,
+        validate=validate,
+        config=Config(attempts_w_filtered=0, total_attempts=0, use_parameters=True),
+    )
+
+    assert result.status == "valid"
+    assert result.query == HEADER_FIXED
+    assert validate.queries == [HEADER_BROKEN, HEADER_FIXED]
+    assert len(llm.calls) == 1
+    assert [(a.query, a.auto_fixed) for a in result.attempts] == [
+        (HEADER_BROKEN, False),
+        (HEADER_FIXED, True),
+    ]
+    assert result.attempts[1].usage == Usage(0, 0)
+    assert result.usage == Usage(10, 4)
+
+
+async def test_the_header_is_not_repaired_when_the_values_are_not_in_one():
+    llm = FakeLLM([reply(HEADER_BROKEN), reply(HEADER_FIXED)])
+    validate = ScriptedValidator(invalid("syntax", cg.SYNTAX_ERROR), VALID)
+
+    result = await run_workflow(
+        "Who?", FULL, llm=llm, validate=validate, config=Config()
+    )
+
+    # a query that is not asked for with parameters is left to the LLM, as it was
+    assert validate.queries == [HEADER_BROKEN, HEADER_FIXED]
+    assert len(llm.calls) == 2
+    assert not any(a.auto_fixed for a in result.attempts)
+
+
+async def test_a_repair_that_does_not_pass_is_dropped():
+    llm = FakeLLM([reply(HEADER_BROKEN), reply("MATCH (p:Person) RETURN p.name")])
+    validate = ScriptedValidator(
+        invalid("syntax", cg.SYNTAX_ERROR), invalid("still wrong"), VALID
+    )
+
+    result = await run_workflow(
+        "Who?", FULL, llm=llm, validate=validate, config=Config(use_parameters=True)
+    )
+
+    assert result.status == "valid"
+    assert [a.query for a in result.attempts] == [
+        HEADER_BROKEN,
+        "MATCH (p:Person) RETURN p.name",
+    ]
+    assert not any(a.auto_fixed for a in result.attempts)
+
+
+async def test_the_header_is_repaired_first_and_then_the_typos_if_they_are_asked_for():
+    broken = "name='Ann', year=1990 MATCH (p:Persn {name: $name}) RETURN p.name"
+    llm = FakeLLM([reply(broken)])
+    validate = ScriptedValidator(
+        invalid("syntax", cg.SYNTAX_ERROR), misspelled(label="Persn"), VALID
+    )
+
+    result = await run_workflow(
+        "Who?",
+        FULL,
+        llm=llm,
+        validate=validate,
+        config=Config(
+            attempts_w_filtered=0,
+            total_attempts=0,
+            use_parameters=True,
+            autofix_typos=True,
+        ),
+    )
+
+    assert result.status == "valid"
+    assert validate.queries == [
+        broken,
+        "CYPHER name='Ann' year=1990 MATCH (p:Persn {name: $name}) RETURN p.name",
+        HEADER_FIXED,
+    ]
+    assert len(llm.calls) == 1

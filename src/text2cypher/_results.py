@@ -27,9 +27,10 @@ class Attempt:
         usage: The tokens the call that wrote the query used, if the client reported them.
         execution_error: What FalkorDB said when it ran the query and failed, if execution is
             on and the query was run; the next attempt then corrects it.
-        auto_fixed: The query is the one before it with misspelled names replaced, without
-            the LLM (``Config.autofix_typos``). It cost no tokens, and it was not written by
-            a request, so it is not a correction.
+        auto_fixed: The query is the one before it, repaired without the LLM: misspelled
+            names replaced (``Config.autofix_typos``), or the parameter header written the
+            way FalkorDB accepts (``Config.use_parameters``). It cost no tokens, and it was
+            not written by a request, so it is not a correction.
     """
 
     query: str

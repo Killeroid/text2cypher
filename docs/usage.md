@@ -82,7 +82,7 @@ agent = Text2Cypher(client, llm, config=Config(attempts_w_filtered=2, total_atte
 | `execute_timeout_ms` | `10000` | Stop an execution after this many milliseconds; `None` for no limit. |
 | `check_types` | `True` | Report a property compared with a value of another type, and `sum`, `avg` and the like of a property that holds no numbers. See [](checks.md). |
 | `check_performance` | `False` | Report a cartesian product, a scan of every node and a path with no upper bound. See [](checks.md). |
-| `use_parameters` | `False` | The LLM puts the values in a `CYPHER` header and uses parameters, which FalkorDB can plan once and reuse. `Result.query` is still one string that runs as it is. |
+| `use_parameters` | `False` | The LLM puts the values in a `CYPHER` header and uses parameters, which FalkorDB can plan once and reuse. `Result.query` is still one string that runs as it is. A header with commas or without `CYPHER` is repaired without the LLM. |
 | `example_values` | `3` | Example values of each property shown to the LLM; they are data from your graph that goes to the LLM provider, so `0` sends none. See [](schema.md#example-values). |
 | `autofix_typos` | `False` | Fix a misspelled label, relationship type or property without the LLM when exactly one name of the graph is a likely typo of it; the fixed query is validated again. See [](how-it-works.md). |
 | `schema_refresh_seconds` | `None` | Keep a graph's schema and check it for changes at most this often; `None` reads it on every run. See [](schema.md). |
