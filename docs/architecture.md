@@ -75,6 +75,7 @@ src/text2cypher/
 ├── _config.py           Config
 ├── _results.py          Result, Attempt, Records, Status, SchemaScope
 ├── _execution.py        execute_cypher: read-only, with a timeout
+├── _skills/             Skill, skills(), load: guides to parts of FalkorDB's Cypher, one folder each (skill.md)
 ├── _errors.py           Text2CypherError, GraphNotFoundError (LLMError and DatabaseError are in _results.py, with the attempts they carry)
 ├── llm/                 public: AsyncLLMClient, Completion, Usage, OpenAIClient, FakeLLM, Call
 │   ├── _base.py  _openai.py  _fake.py
@@ -370,6 +371,20 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   was being validated is kept as an attempt without a validation. The schema read, before any LLM call, loses nothing and is not wrapped.
 - `RunInterrupted` defines `__reduce__`, so the errors survive a pickle (a process pool, a task queue) with their attempts; `__cause__` does not, as for any exception.
 - `FakeLLM` raises a reply that is an exception, so this can be tested.
+
+### Skills (`_skills/`)
+
+- A skill is a folder with a `skill.md`: a front matter (`name`, a one-line `description`) and a guide whose examples are in `cypher` blocks. The folder's name is the id. `skills()` loads every folder, sorted, once;
+  adding a skill is adding a folder. They ship in the wheel and the sdist, and `THIRD_PARTY_NOTICES` (the MIT notice for the path-finding skill, adapted from FalkorDB's own) ships as a license file.
+- Three skills, for the large and rarely needed: `graph-algorithms` (`algo.pageRank`, `betweenness`, `WCC`, `labelPropagation`, `BFS`), `path-finding` (`algo.SPpaths` and `algo.SSpaths` with their options, variable-length
+  patterns, where `shortestPath` and `allShortestPaths` work) and `functions` (what FalkorDB names differently or lacks, and the string, list, math, date, place, vector and aggregate functions it has). The inline rules of the prompt stay:
+  they are short, common and already checked.
+- **Every example is run.** The tests run each `cypher` block of each skill with `ro_query` on a graph of people and cities and require rows, so a skill that teaches a write or a wrong signature fails the build; the claims that a
+  syntax or function is missing (`!=`, `=~`, `COUNT {}`, `EXISTS {}`, `datetime()`, `toLowerCase`, `apoc`, `shortestPath` in `MATCH`) are each asserted to fail on the server, so a FalkorDB that adds one tells us to change the text.
+  Each skill is also capped at 3000 characters, because reading one costs tokens.
+- Facts found while writing them, which a model would not know and one skill disagreed with: `algo.pageRank` takes the label and the type as two strings, not a map; `algo.BFS` takes the start node, the depth (`-1` for no limit) and the type (`null` for any),
+  and its `nodes` leave out the start; `algo.MSF` yields `edges` and `nodes`; `algo.SSpaths` returns up to `pathCount` best paths from the source across all destinations (not one per destination; `0` is those that tie for best);
+  `allShortestPaths` works only in `MATCH` and `shortestPath` only in `WITH` or `RETURN`.
 
 ### Execution (`_execution.py`)
 
