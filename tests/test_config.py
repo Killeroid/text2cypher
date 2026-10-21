@@ -18,6 +18,15 @@ def test_config_rejects_impossible_limits(kwargs: dict[str, Any], message: str):
         Config(**kwargs)
 
 
+def test_three_example_values_of_each_property_are_shown_by_default():
+    assert Config().example_values == 3
+
+
+def test_a_negative_number_of_example_values_is_rejected():
+    with pytest.raises(ValueError, match="example_values"):
+        Config(example_values=-1)
+
+
 def test_config_defaults():
     assert Config() == Config(attempts_w_filtered=5, total_attempts=10)
 

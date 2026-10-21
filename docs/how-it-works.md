@@ -51,8 +51,12 @@ An empty answer means the LLM sees no way to answer the question with the schema
 
 ## What the LLM sees
 
-The LLM sees your question, the schema (names and value types, no data), and its own earlier attempts with what was wrong with them. It never sees the rows of your graph. If you ask for execution, a query that FalkorDB fails is sent back with FalkorDB's error message, which can name a value, and the corrected query is validated and run in turn.
+The LLM sees your question, the schema (names and value types), up to three example values of each property (see below), and its own earlier attempts with what was wrong with them. It never sees the rows a query returns. If you ask for execution, a query that FalkorDB fails is sent back with FalkorDB's error message, which can name a value, and the corrected query is validated and run in turn.
+
+### Example values
+
+By default the schema shows up to three values of each plain property (text, numbers and booleans), for example `title: STRING (e.g. 'Alien', 'Heat')`, so the LLM writes a value the way your graph does, with the same spelling and case. **These are real values from your graph, and they are sent to the LLM provider.** Set `Config(example_values=0)` to send none. They are read with one small read-only query per property, once for each structure of the graph (not on every question), and a property that is slow to read gives none.
 
 ## Cost
 
-A question costs one LLM call when the first query passes (and runs, if you execute it). At most it costs `total_attempts + 1` calls, plus one when an empty answer on the filtered schema is retried on the full one. Every call is recorded on the result with its token usage, if the client reports it. The schema is read from the graph on every `run` unless `schema_refresh_seconds` is set, and the validators answer from that same snapshot, so a query that is fine costs FalkorDB one request (to plan it).
+A question costs one LLM call when the first query passes (and runs, if you execute it). At most it costs `total_attempts + 1` calls, plus one when an empty answer on the filtered schema is retried on the full one. Every call is recorded on the result with its token usage, if the client reports it. The schema is read from the graph on every `run` unless `schema_refresh_seconds` is set, and the validators answer from that same snapshot, so a query that is fine costs FalkorDB one request (to plan it). The example values add one small query per property the first time a structure of the graph is seen, and none after that.

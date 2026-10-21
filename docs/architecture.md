@@ -47,9 +47,11 @@ full schema if it declines on the filtered one). Defaults are 5 and 10.
 - **Structured data, not parsed text.** The validator's issues carry typed fields; we read the fields and never
   match on description text, and a contract test pins the field names we depend on so an upstream change fails a
   test instead of degrading silently.
-- **Nothing is sent to the LLM but names and value types.** The prompt has the question, the schema (labels,
-  relationship types, properties with their value types, paths) and earlier attempts with their problems; no data
-  from the graph and no example values.
+- **What goes to the LLM is stated, and the data in it can be turned off.** The prompt has the question, the schema (labels,
+  relationship types, properties with their value types, paths), earlier attempts with their problems, and, by
+  default, up to three example values of each plain property (`Config.example_values`, `0` sends none). Those values
+  are rows of the graph that go to the LLM provider, so the docs and the option say so. FalkorDB's error text for a
+  query that fails when it runs can name a value too. The rows a query returns never go to the LLM.
 
 ## Package layout
 
@@ -64,7 +66,8 @@ src/text2cypher/
 ├── __init__.py          the public API (re-exports, __all__, __version__); no logic
 ├── py.typed
 ├── _pipeline.py         Text2Cypher: gets the snapshot, runs the workflow, executes
-├── _schema_source.py    SchemaSource: a new snapshot per read, or a kept one per graph (and the missing-graph error)
+├── _schema_source.py    SchemaSource: the schema and snapshot, new per read or kept per graph (and the missing-graph error)
+├── _examples.py         sample_examples: a few example values of each plain property, read-only, with a timeout
 ├── _workflow.py         run_workflow: the loop and the escalation policy
 ├── _config.py           Config
 ├── _results.py          Result, Attempt, Records, Status, SchemaScope
@@ -98,14 +101,15 @@ docs/                    the Sphinx site (conf.py and the guides) and this docum
 
 `Text2Cypher(client, llm, config=None, schema_filter=filter_schema).run(question, graph)`:
 
-1. Asks its `SchemaSource` for a `Snapshot` (`types=True`) of the graph: a new capture on every call, or, with
-   `Config.schema_refresh_seconds`, a kept one (see Schema).
+1. Asks its `SchemaSource` for the graph's `GraphSchema` and the source the validators answer from: a `Snapshot`
+   (`types=True`) captured on every call, or, with `Config.schema_refresh_seconds`, a kept one (see Schema), with the
+   example values (see below).
 2. The source raises `GraphNotFoundError` (a public `ValueError`) before any LLM call if the snapshot has no labels and
    no relationship types: FalkorDB has no graph without data, so an empty snapshot means a missing graph or a typo,
    and nothing is kept for it.
-3. Builds the `GraphSchema` from the snapshot and runs the workflow with a `QueryValidator` that answers from the same
-   snapshot (hybrid mode), so the prompt and the validator cannot disagree.
-4. If `config.execute` and the result is `valid`, executes the query and puts the rows or the error on the result.
+3. Runs the workflow with a `QueryValidator` that answers from the same snapshot (hybrid mode), so the prompt and the
+   validator cannot disagree.
+4. If `config.execute`, the workflow also runs each query that passed validation (see Execution).
 
 Errors from the LLM or from the database while reading the schema or validating propagate; nothing is caught.
 
@@ -187,6 +191,21 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   refresh is switched off (it is never due), so no task outlives the event loop. A graph that did not exist is not kept,
   so one created after the error is found. The fingerprint is a heuristic, and between checks a change is missing from the
   prompt; it is not missing from validation, because a problem is confirmed against the database before it is reported.
+- **Example values** (`Config.example_values`, default 3; `0` turns them off). `GraphSchema.node_examples` and
+  `relationship_examples` map entity then property to values already written as in a query (`'Alien'`, `1999`,
+  `true`; a string is cut at 40 characters, with an escaped quote), and `render_schema` prints them after the type,
+  `title: STRING (e.g. 'Alien', 'Heat')`. When any exist the prompt gets one rule: "Where the schema shows example
+  values, write a value the way the examples are written (spelling and case)". They are read by `_examples.py`: one
+  read-only query per property of a plain type (String, Integer, Float, Boolean; not a list, map, point or vector)
+  that returns the first 20 non-null values and stops (a `DISTINCT` would read every row), of which the first
+  three distinct are kept. At most 8 run at once, each with a 2 second timeout, and a query that fails or times out
+  gives that property no examples, because they are a help and not a need. The filter keeps the examples of what it keeps.
+  They are read once per structure of the graph: `SchemaSource` keeps them with the snapshot they were read for (compared
+  without its capture time) and reads again only when a new snapshot differs in structure, so a default `Text2Cypher`
+  does not repeat the queries on every run (checked: a second read costs what a read with no examples costs). Values that
+  change inside the same structure are not seen, which is fine for illustrations. The option is on by default because
+  how a value is written (`'Sales'` or `'sales'`) is what a correct query most often depends on, and it is an option because
+  they are data from the graph that goes to the LLM provider.
 - Names containing a backtick are skipped: FalkorDB has no escape for one, so no query can use such a name, and
   skipping them also removes any chance of injecting through a name read from the database. Other names are quoted
   only through `quote_identifier`, and only when rendered.
@@ -361,7 +380,6 @@ Each item says what would bring it back.
 - Few-shot examples generated from the schema; the schema as inline Cypher patterns instead of the Neo4j-style
   text; the schema in the user message instead of the system prompt (ours keeps a stable prefix for provider
   prompt caching); a numbered `code: description` error format for the corrector.
-- Example values in the schema (they need separate queries, and send graph data to the LLM provider).
 - Dynamic skills (the model reads guidance through tool calls: needs a tool-calling protocol, which a stateless
   `chat(system, messages)` does not have); answer synthesis.
 - A model without a system role: an option on `OpenAIClient` that sends one user message.

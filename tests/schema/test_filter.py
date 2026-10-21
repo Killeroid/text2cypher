@@ -149,3 +149,23 @@ def test_the_functions_of_the_instance_are_kept_whatever_the_question_matches():
 
     assert kept.functions == ("lib.f",)
     assert len(kept.node_properties) < len(with_functions.node_properties)
+
+
+def test_the_filter_keeps_the_examples_of_what_it_keeps():
+    schema = GraphSchema(
+        node_properties={
+            "Movie": {"title": ("String",)},
+            "Person": {"name": ("String",)},
+        },
+        relationship_properties={},
+        paths=(),
+        node_examples={
+            "Movie": {"title": ("'Alien'",)},
+            "Person": {"name": ("'Ann'",)},
+        },
+    )
+
+    filtered = filter_schema(schema, "Which movies are there?")
+
+    assert filtered.node_properties == {"Movie": {"title": ("String",)}}
+    assert filtered.node_examples == {"Movie": {"title": ("'Alien'",)}}

@@ -95,6 +95,11 @@ _INDEX_RULES = {
     ),
 }
 
+_EXAMPLES_RULE = (
+    "- Where the schema shows example values, write a value the way the examples are "
+    "written (spelling and case)."
+)
+
 _FUNCTION_RULE = (
     "- The graph's FalkorDB has user-defined functions, listed under User-defined "
     "functions in the schema and called by that name, as in library.function(x). Call "
@@ -145,6 +150,12 @@ Question: Remove all employees.
 """
 
 
+def _has_examples(schema: GraphSchema) -> bool:
+    return any(schema.node_examples.values()) or any(
+        schema.relationship_examples.values()
+    )
+
+
 def generator_system(schema: GraphSchema, *, parameterize: bool = False) -> str:
     """The system prompt that tells the LLM how to write a query for ``schema``."""
     kinds = {index.type for index in schema.indexes}
@@ -153,6 +164,7 @@ def generator_system(schema: GraphSchema, *, parameterize: bool = False) -> str:
         _PARAMETER_RULE if parameterize else _INLINE_VALUES_RULE,
         *(rule for kind, rule in _INDEX_RULES.items() if kind in kinds),
         *([_FUNCTION_RULE] if schema.functions else []),
+        *([_EXAMPLES_RULE] if _has_examples(schema) else []),
     ]
     text = (
         render_schema(schema)

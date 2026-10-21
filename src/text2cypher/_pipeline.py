@@ -11,7 +11,7 @@ from text2cypher._schema_source import SchemaSource
 from text2cypher._validation import QueryValidator
 from text2cypher._workflow import run_workflow
 from text2cypher.llm import AsyncChatClient, AsyncLLMClient
-from text2cypher.schema import SchemaFilter, filter_schema, schema_from_snapshot
+from text2cypher.schema import SchemaFilter, filter_schema
 
 
 class Text2Cypher:
@@ -42,7 +42,9 @@ class Text2Cypher:
         self._llm = llm
         self._config = config or Config()
         self._schema_filter = schema_filter
-        self._schemas = SchemaSource(client, self._config.schema_refresh_seconds)
+        self._schemas = SchemaSource(
+            client, self._config.schema_refresh_seconds, self._config.example_values
+        )
 
     async def run(self, question: str, graph: str) -> Result:
         """Write a query for ``question`` over the graph named ``graph``.
@@ -59,7 +61,7 @@ class Text2Cypher:
             GraphNotFoundError: If the graph does not exist (or has no labelled nodes or
                 relationships), before any LLM call is made.
         """
-        snapshot, source = await self._schemas.read(graph)
+        schema, source = await self._schemas.read(graph)
         # The validators answer from the snapshot the prompt was written from, so they cannot
         # disagree with it, and ask the database only to plan the query and confirm a problem
         validator = QueryValidator(
@@ -70,7 +72,7 @@ class Text2Cypher:
         )
         return await run_workflow(
             question,
-            schema_from_snapshot(snapshot),
+            schema,
             llm=self._llm,
             validate=lambda query: validator.validate(query, graph),
             config=self._config,

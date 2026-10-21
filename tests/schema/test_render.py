@@ -123,3 +123,20 @@ def test_render_schema_has_no_function_section_without_functions():
     )
 
     assert "User-defined" not in render_schema(schema)
+
+
+def test_render_schema_shows_the_examples_after_the_type_of_a_property():
+    schema = GraphSchema(
+        node_properties={"Movie": {"title": ("String",), "year": ("Integer",)}},
+        relationship_properties={"ACTED_IN": {"role": ("String",)}},
+        paths=(),
+        node_examples={"Movie": {"title": ("'Alien'", "'Heat'")}},
+        relationship_examples={"ACTED_IN": {"role": ("'Neo'",)}},
+    )
+
+    assert render_schema(schema) == (
+        "Node properties:\n"
+        "Movie {title: STRING (e.g. 'Alien', 'Heat'), year: INTEGER}\n"
+        "Relationship properties:\n"
+        "ACTED_IN {role: STRING (e.g. 'Neo')}"
+    )

@@ -2,7 +2,7 @@
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import NamedTuple
 
 _PLAIN_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
@@ -58,6 +58,9 @@ class GraphSchema:
         paths: The one-hop paths that exist.
         indexes: The indexes on properties of labels and relationship types.
         functions: The user-defined functions of the FalkorDB instance, as ``library.function``.
+        node_examples: Example values of the properties of each label, as they are written in
+            a query (``'Alien'``, ``1999``): at most a few per property, and only for some.
+        relationship_examples: The same for the properties of each relationship type.
     """
 
     node_properties: Mapping[str, Mapping[str, tuple[str, ...]]]
@@ -65,6 +68,12 @@ class GraphSchema:
     paths: tuple[Path, ...]
     indexes: tuple[Index, ...] = ()
     functions: tuple[str, ...] = ()
+    node_examples: Mapping[str, Mapping[str, tuple[str, ...]]] = field(
+        default_factory=dict
+    )
+    relationship_examples: Mapping[str, Mapping[str, tuple[str, ...]]] = field(
+        default_factory=dict
+    )
 
 
 def quote_identifier(name: str) -> str:

@@ -58,6 +58,18 @@ def test_the_checks_and_the_example_follow_the_mode_of_the_values():
     assert header.index("$parameter has a value") < header.index("Reply with")
 
 
+def test_the_rule_about_example_values_is_only_there_when_the_schema_has_them():
+    with_examples = replace(SCHEMA, node_examples={"Person": {"name": ("'Ann'",)}})
+    rule = "write a value the way the examples are written (spelling and case)"
+
+    assert rule not in generator_system(SCHEMA)
+    assert rule in generator_system(with_examples)
+    assert "Person {name: STRING (e.g. 'Ann')}" in generator_system(with_examples)
+    assert rule in generator_system(
+        replace(SCHEMA, relationship_examples={"ACTED_IN": {"role": ("'Neo'",)}})
+    )
+
+
 def test_generator_user_is_the_question():
     assert generator_user("Who acted in Heat?") == "Question: Who acted in Heat?"
 

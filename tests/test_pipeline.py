@@ -27,7 +27,10 @@ async def test_a_valid_query_comes_back_on_the_first_try(
     assert result.attempts[0].validation is not None
     assert result.attempts[0].validation.valid
     # the prompt carries the real schema of the graph, found through a snapshot
-    assert "Movie {title: STRING, year: INTEGER}" in llm.calls[0].system
+    assert (
+        "Movie {title: STRING (e.g. 'Matrix'), year: INTEGER (e.g. 1999)}"
+        in llm.calls[0].system
+    )
     assert "(:Person)-[:ACTED_IN]->(:Movie)" in llm.calls[0].system
 
 
@@ -90,7 +93,7 @@ async def test_the_prompt_has_only_the_part_of_the_schema_the_question_is_about(
     assert result.status == "valid"
     assert result.attempts[0].schema_scope == "filtered"
     system = llm.calls[0].system
-    assert "Genre {name: STRING}" in system
+    assert "Genre {name: STRING (e.g. 'SciFi')}" in system
     assert "Movie {" in system
     assert "Person" not in system
     assert "KNOWS" not in system
@@ -508,3 +511,31 @@ async def test_a_query_that_keeps_failing_on_the_database_ends_as_failed(
     assert result.records is None
     assert result.execution_error == "Division by zero"
     assert len(result.attempts) == 2
+
+
+async def test_the_prompt_shows_example_values_and_how_to_use_them_by_default(
+    falkordb_client: FalkorDB, film_graph: AsyncGraph
+):
+    llm = FakeLLM([reply("MATCH (p:Person) RETURN p.name")])
+
+    await Text2Cypher(falkordb_client, llm).run("Who?", film_graph.name)
+
+    system = llm.calls[0].system
+    assert "name: STRING (e.g. 'Keanu', 'Carrie')" in system
+    assert "ACTED_IN {role: STRING (e.g. 'Neo', 'Trinity')" in system
+    assert "write a value the way the examples are written" in system
+
+
+async def test_with_zero_example_values_nothing_from_the_graph_is_in_the_prompt(
+    falkordb_client: FalkorDB, film_graph: AsyncGraph
+):
+    llm = FakeLLM([reply("MATCH (p:Person) RETURN p.name")])
+
+    await Text2Cypher(falkordb_client, llm, config=Config(example_values=0)).run(
+        "Who?", film_graph.name
+    )
+
+    system = llm.calls[0].system
+    for value in ("Keanu", "Carrie", "Neo", "Trinity", "Matrix", "SciFi", "e.g."):
+        assert value not in system
+    assert "the way the examples are written" not in system

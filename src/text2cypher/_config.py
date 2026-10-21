@@ -31,6 +31,12 @@ class Config:
     {name: $name}) ...``) and uses them as parameters, which FalkorDB can plan once and
     reuse. The query stays one string: ``Result.query`` runs as it is.
 
+    The schema shows up to ``example_values`` values of each property (``title: STRING (e.g.
+    'Alien', 'Heat')``), so the LLM writes a value the way the graph does: spelling, case,
+    format. They are read from the graph, one small query per property, and are **data from
+    your graph that goes to the LLM provider**: pass ``0`` to send none. They are kept while the
+    structure of the graph is the same, so a graph pays for the queries once, not on every run.
+
     The schema is read from the graph on every run by default. With
     ``schema_refresh_seconds`` it is kept: a run that comes after that many seconds first
     checks whether the graph changed (a few cheap queries) and reads the schema again only
@@ -48,6 +54,8 @@ class Config:
         use_parameters: Ask the LLM for the values in a ``CYPHER`` header and parameters.
         check_types: Report type mismatches of properties.
         check_performance: Report queries that may be expensive, which is off by default.
+        example_values: How many example values of each property to show the LLM; ``0``
+            sends none.
         schema_refresh_seconds: Keep the schema of a graph and check it for changes at
             most this often, or read it on every run if ``None``.
     """
@@ -60,6 +68,7 @@ class Config:
     use_parameters: bool = False
     check_types: bool = True
     check_performance: bool = False
+    example_values: int = 3
 
     def __post_init__(self) -> None:
         if self.attempts_w_filtered < 0:
@@ -70,5 +79,7 @@ class Config:
             raise ValueError("total_attempts must be at least attempts_w_filtered")
         if self.execute_timeout_ms is not None and self.execute_timeout_ms <= 0:
             raise ValueError("execute_timeout_ms must be positive")
+        if self.example_values < 0:
+            raise ValueError("example_values must be 0 or more")
         if self.schema_refresh_seconds is not None and self.schema_refresh_seconds < 0:
             raise ValueError("schema_refresh_seconds must be 0 or more")

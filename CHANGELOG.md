@@ -6,6 +6,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Added
 
+- `Config(example_values=3)`: the schema the LLM is shown has up to three example values of each property of a plain type (`title: STRING (e.g. 'Alien', 'Heat')`), so it writes a value the way the graph does,
+  and the prompt gets a rule to do so. **They are rows of your graph and go to the LLM provider: pass `example_values=0` to send none.** They are read with one small read-only query per property (with a timeout),
+  once for each structure of the graph. `GraphSchema.node_examples` and `relationship_examples` hold them.
 - `AsyncChatClient` and `Message`: a client with a `chat(system, messages)` method is given a correction as the turns of a conversation. `OpenAIClient` and `FakeLLM` have it, and a
   `FakeLLM` call records every turn (`Call.messages`). A client with only `complete(system, user)` keeps working: it is given the same conversation as one user message.
 

@@ -10,6 +10,8 @@ FalkorDB has no declared schema, so text2cypher describes the graph by what it c
 * `functions`: the user-defined functions of the FalkorDB instance (`library.function`), listed under `User-defined functions:` in the prompt with the rule to call only those listed. They belong to the instance, so the filter keeps all of them.
 * `indexes`: the indexes on properties, as `Index(entity, property, type)` with `type` one of `RANGE`, `FULLTEXT` or `VECTOR`. They are listed under `Indexes:` in the prompt, and the prompt gets a rule for each kind that exists: compare an indexed property directly (`=`, `<`, `>`, `IN`) because `<>`, `NOT`, `STARTS WITH`, `CONTAINS` and a function on the property cannot use the index (checked on FalkorDB); search words with `db.idx.fulltext.queryNodes` only when the question is a word search; and never call `db.idx.vector.*`, because there is no embedding for the question.
 
+* `node_examples` and `relationship_examples`: up to `Config.example_values` (3 by default) example values of each plain property, written as in a query, which are shown after the type. See [Example values](#example-values).
+
 Labels, relationship types and properties whose name contains a backtick are left out: FalkorDB cannot parse an escaped backtick, so no query can use them.
 
 You can do the same by hand, for example to look at what the LLM would get:
@@ -37,6 +39,21 @@ The relationships:
 ```
 
 This text is what goes into the prompt. Names that are not plain identifiers are written in backticks, and a section with nothing in it is left out.
+
+## Example values
+
+`Config(example_values=3)` is the number of values shown for each property of a plain type (text, number, boolean; not a list, map, point or vector), and `0` shows none:
+
+```text
+Node properties:
+Movie {rating: FLOAT (e.g. 8.7), title: STRING (e.g. 'Matrix'), year: INTEGER (e.g. 1999)}
+```
+
+They tell the LLM how a value is written in your graph: `'Sales'` or `'sales'`, `1999` or `'1999'`. When the schema has any, the prompt adds a rule to write a value the way the examples are written.
+
+* **They are data from your graph, and they go to the LLM provider.** Turn them off with `example_values=0` if that is not acceptable. Nothing is read from the graph for them then.
+* Each property costs one small read-only query that stops after a few rows, with a 2 second timeout; a property that fails or is slow gets none. They are read once for a structure of the graph and kept with the schema, so a question does not pay for them again until a label, relationship type, property or index appears or goes. A value that changes inside the same structure is not noticed.
+* A long string is cut at 40 characters, and the filter below keeps the examples of what it keeps.
 
 ## Filtering
 
