@@ -61,9 +61,9 @@ one call, up to four with skills. Defaults are 5 and 10 (ADR-046).
 
 ## Package layout
 
-Public API: what `text2cypher`, `text2cypher.llm` and `text2cypher.schema` list in `__all__`, pinned by
+Public API: what `text2cypher`, `text2cypher.llm`, `text2cypher.schema` and `text2cypher.skills` list in `__all__`, pinned by
 `tests/test_public_api.py`, which also fails if a module outside them lacks a leading underscore. Everything
-else is internal. Dependencies point down, and `import-linter` enforces it in CI: `_pipeline` -> `_workflow` ->
+else is internal. Dependencies point down, and `import-linter` enforces it in CI: (`_pipeline`, `skills`) -> `_workflow` ->
 (`_generation`, `_execution`, `_schema_source`) -> `_examples` -> `_results` -> `_validation` -> (`llm`, `schema`, `_config`, `_errors`, `_skills`),
 and the package never imports `evals`. Each type lives with its domain (there is no shared `types` module).
 
@@ -78,7 +78,8 @@ src/text2cypher/
 ├── _config.py           Config
 ├── _results.py          Result, Attempt, Records, Status, SchemaScope, total_usage, and the run errors LLMError and DatabaseError
 ├── _execution.py        execute_cypher (read-only, with a timeout), run_query and Execution (an error as a value)
-├── _skills/             Skill, skills(), load: guides to parts of FalkorDB's Cypher, one folder each (skill.md)
+├── skills.py            public: Skill, builtin_skills, load_skills (the names of _skills, for the skills= argument)
+├── _skills/             Skill, skills(), load, catalog, check_inline: guides to parts of FalkorDB's Cypher, one folder each (SKILL.md)
 ├── _errors.py           Text2CypherError, GraphNotFoundError (LLMError and DatabaseError are in _results.py, with the attempts they carry)
 ├── llm/                 public: AsyncChatClient, AsyncLLMClient, Completion, Message, Tool, ToolCall, Usage, OpenAIClient, FakeLLM, Call
 │   ├── _base.py  _openai.py  _fake.py  _adapt.py (as_client: the SDK's own client)
@@ -382,7 +383,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 
 ### Skills (`_skills/`)
 
-- A skill is a folder with a `skill.md`: a front matter (`name`, a one-line `description`) and a guide whose examples are in `cypher` blocks. The folder's name is the id. `skills()` loads every folder, sorted, once;
+- A skill is a folder with a `SKILL.md`: a front matter (`name`, a one-line `description`) and a guide whose examples are in `cypher` blocks. The folder's name is the id. `skills()` loads every folder, sorted, once;
   adding a skill is adding a folder. They ship in the wheel and the sdist, and `THIRD_PARTY_NOTICES` (the MIT notice for the path-finding skill, adapted from FalkorDB's own) ships as a license file.
 - Three skills, for the large and rarely needed: `graph-algorithms` (`algo.pageRank`, `betweenness`, `WCC`, `labelPropagation`, `BFS`), `path-finding` (`algo.SPpaths` and `algo.SSpaths` with their options, variable-length
   patterns, where `shortestPath` and `allShortestPaths` work) and `functions` (what FalkorDB names differently or lacks, and the string, list, math, date, place, vector and aggregate functions it has). The inline rules of the prompt stay:
@@ -393,6 +394,8 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 - Facts found while writing them, which a model would not know and one skill disagreed with: `algo.pageRank` takes the label and the type as two strings, not a map; `algo.BFS` takes the start node, the depth (`-1` for no limit) and the type (`null` for any),
   and its `nodes` leave out the start; `algo.MSF` yields `edges` and `nodes`; `algo.SSpaths` returns up to `pathCount` best paths from the source across all destinations (not one per destination; `0` is those that tie for best);
   `allShortestPaths` works only in `MATCH` and `shortestPath` only in `WITH` or `RETURN`.
+
+- **Skills you provide (ADR-050).** `Text2Cypher(skills=[...])` replaces the shipped ones; `builtin_skills()` and `load_skills(path)` (in `text2cypher.skills`, with `Skill`) make a list to extend or replace them. The catalog is one `dict[str, Skill]` held by the pipeline and passed down (`run_workflow(skills=)`, `generate_cypher(catalog=)`, `SkillsOffer.catalog`, `chat_reading_skills(catalog)`); `None` means the shipped ones, which keeps every earlier call as it was. `Skill.__post_init__` checks the id, the one-line description and that no `cypher` example writes (a clause not preceded by a `.` or a word character, with strings removed, so `list.remove` is a function); `catalog()` rejects an empty list and a repeated id; `check_inline` caps the total at `INLINE_LIMIT` = 16,000 characters for a client without tools. `skills=` without `use_skills` is an error, not ignored. Not checked: that a user's examples run (only the shipped ones are tested on a server) or that its claims are true. A skill is text sent to the provider that steers the model, which the docs say.
 
 ### Reading skills (`_generation/read_skill.py`)
 

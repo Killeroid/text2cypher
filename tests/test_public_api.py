@@ -4,7 +4,7 @@ import importlib
 import pkgutil
 
 import text2cypher
-from text2cypher import llm, schema
+from text2cypher import llm, schema, skills
 
 PUBLIC = {
     "text2cypher": {
@@ -27,6 +27,7 @@ PUBLIC = {
         "Records",
         "Result",
         "SchemaFilter",
+        "Skill",
         "Text2Cypher",
         "Text2CypherError",
         "Tool",
@@ -48,6 +49,7 @@ PUBLIC = {
         "ToolCall",
         "Usage",
     },
+    "text2cypher.skills": {"Skill", "builtin_skills", "load_skills"},
     "text2cypher.schema": {
         "GraphSchema",
         "Index",
@@ -83,10 +85,16 @@ def test_the_public_names_of_the_subpackages_are_the_same_objects_as_the_top_lev
         assert getattr(text2cypher, name) is getattr(llm, name)
     for name in ("GraphSchema", "SchemaFilter", "filter_schema"):
         assert getattr(text2cypher, name) is getattr(schema, name)
+    assert text2cypher.Skill is skills.Skill
 
 
 def test_every_module_outside_the_public_namespaces_is_internal():
-    public_packages = {"text2cypher", "text2cypher.llm", "text2cypher.schema"}
+    public_packages = {
+        "text2cypher",
+        "text2cypher.llm",
+        "text2cypher.schema",
+        "text2cypher.skills",
+    }
     names = [
         module.name
         for module in pkgutil.walk_packages(text2cypher.__path__, "text2cypher.")

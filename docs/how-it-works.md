@@ -68,6 +68,40 @@ Each starts with a description of when to read it, then has Usage, Examples and 
 * A client that cannot be offered tools (see [LLM clients](llm.md)) is given every skill in the prompt instead. That costs about 2,000 tokens in every request and no extra call.
 * The examples in the skills, and each claim that something is missing, are run against a real FalkorDB server whenever the library is tested, so a guide that is wrong fails the build.
 
+### Your own skills
+
+The skills are yours to change. Pass `skills=` to `Text2Cypher`, with `Config(use_skills=True)`; the list **replaces** the ones that ship, so to add to them, start from `builtin_skills()`:
+
+```python
+from text2cypher import Config, Skill, Text2Cypher
+from text2cypher.skills import builtin_skills, load_skills
+
+ours = Skill(
+    id="our-labels",
+    name="Our labels",
+    description="Use for questions about customers and contracts: which label holds what.",
+    body="## Usage\n\nA `Contract` is signed by a `Party`, never by a `Customer` ...",
+)
+agent = Text2Cypher(
+    client, llm, config=Config(use_skills=True), skills=[*builtin_skills(), ours]
+)
+
+# or read them from a folder: one folder per skill, with a SKILL.md in it
+agent = Text2Cypher(
+    client, llm, config=Config(use_skills=True), skills=load_skills("skills/")
+)
+```
+
+The file is `SKILL.md`, and `skill.md` or any other case is found too, on every system. A `SKILL.md` starts with a front matter holding a `name` and a one-line `description`, then the guide; the folder's name is the id. The description is the only thing the model sees before it decides to read the skill, so say when to read it. These are checked when you build a skill or `Text2Cypher`, and a problem is a `ValueError`:
+
+* an id is letters, digits, `_`, `-` and `.`, and two skills cannot have the same one;
+* a skill needs a name, a one-line description and a body;
+* an example in a `cypher` block must be read-only (no `CREATE`, `MERGE`, `DELETE`, `SET`, `REMOVE`, `DROP` or `FOREACH`), because the library never returns a query that writes;
+* `skills=` without `use_skills=True`, or an empty list, is an error rather than being ignored;
+* for a client that cannot be offered tools, every skill is in every prompt, so together they may be at most 16,000 characters (the ones that ship are about 7,500).
+
+**A skill is text that steers the model, and it goes to the LLM provider with every request that reads it.** Use only skills you wrote or trust: a guide from an unknown source can tell the model to do things you did not ask for. The library does not run your examples; the ones that ship are tested on a real FalkorDB server, and for yours that is your job.
+
 ## When the LLM declines
 
 An empty fenced block means the LLM sees no way to answer the question with the schema it was given. With a filtered schema that may be the filter's doing, so the same request is made again, once, with the full schema, and it does not use up a correction. An empty block on the full schema ends the loop with `unanswerable`. An empty query is never validated.

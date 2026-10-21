@@ -1,6 +1,6 @@
 """The entry point: ask a question of a graph."""
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 
 from falkordb.asyncio import FalkorDB
 from openai import AsyncOpenAI
@@ -10,10 +10,12 @@ from text2cypher._execution import Execution, run_query
 from text2cypher._generation import AsyncSchemaFilter, LLMSchemaFilter
 from text2cypher._results import Result
 from text2cypher._schema_source import SchemaSource
+from text2cypher._skills import Skill, catalog, check_inline, skills
 from text2cypher._validation import QueryValidator
 from text2cypher._workflow import run_workflow
 from text2cypher.llm import AsyncChatClient, AsyncLLMClient
 from text2cypher.llm._adapt import as_client
+from text2cypher.llm._base import supports_tools
 from text2cypher.schema import SchemaFilter, filter_schema
 
 
@@ -38,6 +40,15 @@ class Text2Cypher:
             ``LLMSchemaFilter`` asks a model instead (it is given ``llm`` unless it has
             its own), and runs alone. ``None`` turns filtering off: every attempt uses the
             full schema. It may be a function or an async one; see ``AsyncSchemaFilter``.
+        skills: The skills the LLM can read, in place of the ones that ship (to add to them,
+            pass ``[*builtin_skills(), yours]``; see ``text2cypher.skills``). It needs
+            ``Config(use_skills=True)``. A skill is text that steers the model and goes to the
+            LLM provider: use only text you trust. A client that cannot be offered tools is
+            given every skill in each prompt, so they may add up to 16,000 characters.
+
+    Raises:
+        ValueError: If ``skills`` is given without ``use_skills``, is empty, has two skills
+            with one id, or (for a client without tools) is too long to put in every prompt.
     """
 
     def __init__(
@@ -48,10 +59,12 @@ class Text2Cypher:
         model: str | None = None,
         config: Config | None = None,
         schema_filter: SchemaFilter | AsyncSchemaFilter | None = filter_schema,
+        skills: Sequence[Skill] | None = None,
     ) -> None:
         self._client = client
         self._llm = as_client(llm, model)
         self._config = config or Config()
+        self._skills = self._skills_on_offer(skills)
         # A filter that has no client of its own is given the main one
         if isinstance(schema_filter, LLMSchemaFilter):
             schema_filter = schema_filter.bound(self._llm)
@@ -59,6 +72,19 @@ class Text2Cypher:
         self._schemas = SchemaSource(
             client, self._config.schema_refresh_seconds, self._config.example_values
         )
+
+    def _skills_on_offer(
+        self, chosen: Sequence[Skill] | None
+    ) -> dict[str, Skill] | None:
+        """What the LLM may read, checked; ``None`` when skills are off."""
+        if not self._config.use_skills:
+            if chosen is not None:
+                raise ValueError("skills needs Config(use_skills=True)")
+            return None
+        offered = dict(skills()) if chosen is None else catalog(chosen)
+        if not supports_tools(self._llm):
+            check_inline(offered)
+        return offered
 
     def clear_schema(self, graph: str | None = None) -> None:
         """Forget what is kept of the schema of ``graph``, or of every graph.
@@ -103,6 +129,7 @@ class Text2Cypher:
             config=self._config,
             schema_filter=self._schema_filter,
             execute=self._executor(graph),
+            skills=self._skills,
         )
 
     def _executor(self, graph: str) -> Callable[[str], Awaitable[Execution]] | None:

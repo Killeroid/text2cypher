@@ -7,7 +7,16 @@ import pytest
 from falkordb.asyncio import FalkorDB
 from falkordb.asyncio.graph import AsyncGraph
 
-from text2cypher._skills import Skill, load, skills
+from text2cypher._skills import (
+    INLINE_LIMIT,
+    Skill,
+    builtin_skills,
+    catalog,
+    check_inline,
+    load,
+    load_skills,
+    skills,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -107,21 +116,21 @@ def test_a_skill_file_needs_front_matter_a_name_and_a_description(tmp_path: Path
         "blank": "---\nname: n\ndescription:\n---\nbody",
     }.items():
         (tmp_path / folder).mkdir()
-        (tmp_path / folder / "skill.md").write_text(text)
+        (tmp_path / folder / "SKILL.md").write_text(text)
 
         with pytest.raises(ValueError, match=folder):
             load(tmp_path)
-        (tmp_path / folder / "skill.md").unlink()
+        (tmp_path / folder / "SKILL.md").unlink()
         (tmp_path / folder).rmdir()
 
 
 def test_the_loader_reads_a_folder_that_has_a_skill_and_skips_the_rest(tmp_path: Path):
     (tmp_path / "b-skill").mkdir()
-    (tmp_path / "b-skill" / "skill.md").write_text(
+    (tmp_path / "b-skill" / "SKILL.md").write_text(
         "---\nname: Bee\ndescription: About bees: a lot\n---\n\n# Heading\n\nText\n"
     )
     (tmp_path / "a-skill").mkdir()
-    (tmp_path / "a-skill" / "skill.md").write_text(
+    (tmp_path / "a-skill" / "SKILL.md").write_text(
         "---\nname: Ay\ndescription: About a\n---\nBody"
     )
     (tmp_path / "empty-folder").mkdir()
@@ -239,3 +248,106 @@ async def test_the_notes_of_the_functions_skill_say_what_the_server_does(
         guide_graph,
         "MATCH (c:City) WHERE c.name STARTS WITH 'A' OR c.name ENDS WITH 'E' OR c.name CONTAINS 'C' RETURN count(c)",
     ) == [[3]]
+
+
+def test_the_skills_that_ship_are_listed_in_id_order_by_builtin_skills():
+    assert builtin_skills() == list(skills().values())
+
+
+def test_load_skills_reads_a_folder_of_skills_as_a_list(tmp_path: Path):
+    (tmp_path / "mine").mkdir()
+    (tmp_path / "mine" / "SKILL.md").write_text(
+        "---\nname: Mine\ndescription: Use for mine\n---\nBody"
+    )
+
+    assert load_skills(tmp_path) == [Skill("mine", "Mine", "Use for mine", "Body")]
+    assert load_skills(str(tmp_path)) == load_skills(tmp_path)
+
+
+def test_load_skills_says_so_when_there_is_no_folder_or_no_skill(tmp_path: Path):
+    with pytest.raises(FileNotFoundError):
+        load_skills(tmp_path / "missing")
+    with pytest.raises(ValueError, match="no skill"):
+        load_skills(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("skill_id", "name", "description", "body", "problem"),
+    [
+        ("", "n", "d", "b", "id"),
+        ("two words", "n", "d", "b", "id"),
+        ("a", " ", "d", "b", "name"),
+        ("a", "n", "", "b", "description"),
+        ("a", "n", "d", " ", "body"),
+        ("a", "n", "one\ntwo", "b", "more than one line"),
+    ],
+)
+def test_a_skill_needs_an_id_a_name_a_one_line_description_and_a_body(
+    skill_id: str, name: str, description: str, body: str, problem: str
+):
+    with pytest.raises(ValueError, match=problem):
+        Skill(skill_id, name, description, body)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "CREATE (n:Person)",
+        "MATCH (n) SET n.x = 1 RETURN n",
+        "match (n) detach delete n",
+        "MERGE (n:Person {name: 'a'})",
+        "MATCH (n) REMOVE n.x",
+    ],
+)
+def test_a_skill_whose_example_writes_is_refused(query: str):
+    with pytest.raises(ValueError, match="read-only"):
+        Skill("w", "W", "Use for w", f"```cypher\n{query}\n```")
+
+
+def test_a_write_word_in_a_string_in_prose_or_in_a_function_name_is_not_a_write():
+    body = (
+        "Never CREATE anything.\n\n```cypher\n"
+        "MATCH (n) WHERE n.note = 'SET and DELETE' RETURN list.remove([1, 2], 0, 1)\n```"
+    )
+
+    assert Skill("ok", "Ok", "Use for ok", body).id == "ok"
+
+
+def test_the_skills_must_be_there_and_have_different_ids():
+    with pytest.raises(ValueError, match="empty"):
+        catalog([])
+    with pytest.raises(ValueError, match="have the id"):
+        catalog([Skill("a", "A", "d", "b"), Skill("a", "A2", "d2", "b2")])
+
+
+def test_every_skill_that_ships_fits_in_a_prompt_with_room_to_add_your_own():
+    check_inline(skills())
+    assert sum(len(skill.text) for skill in skills().values()) < INLINE_LIMIT / 1.5
+    with pytest.raises(ValueError, match="16000"):
+        check_inline({"big": Skill("big", "Big", "d", "x" * INLINE_LIMIT)})
+
+
+@pytest.mark.parametrize("filename", ["SKILL.md", "skill.md", "Skill.MD"])
+def test_a_skill_file_is_found_whatever_the_case_of_its_name(
+    tmp_path: Path, filename: str
+):
+    (tmp_path / "mine").mkdir()
+    (tmp_path / "mine" / filename).write_text(
+        "---\nname: Mine\ndescription: Use for mine\n---\nBody"
+    )
+
+    assert list(load(tmp_path)) == ["mine"]
+    assert list(load_skills(tmp_path)) != []
+
+
+def test_a_folder_with_two_skill_files_that_differ_only_in_case_is_an_error(
+    tmp_path: Path,
+):
+    (tmp_path / "twice").mkdir()
+    (tmp_path / "twice" / "SKILL.md").write_text("---\nname: A\ndescription: d\n---\nB")
+    (tmp_path / "twice" / "skill.md").write_text("---\nname: C\ndescription: d\n---\nD")
+    if len(list((tmp_path / "twice").iterdir())) < 2:
+        pytest.skip("this file system does not tell the two names apart")
+
+    with pytest.raises(ValueError, match="more than one"):
+        load(tmp_path)

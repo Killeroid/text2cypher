@@ -60,7 +60,7 @@ asyncio.run(main())
 
 Always look at `result.status`. `valid` means the query passed the checks, not that it means what you meant.
 
-There is also [a quickstart that needs no model and no server](https://github.com/Killeroid/text2cypher/blob/main/examples/quickstart.py): it starts an embedded FalkorDB and answers with a scripted LLM, including one correction.
+There is also [a quickstart](https://github.com/Killeroid/text2cypher/blob/main/examples/quickstart.py) that needs no model and no server: it starts an embedded FalkorDB and answers with a scripted LLM, including one correction.
 
 ## What is and is not checked
 
@@ -69,7 +69,7 @@ There is also [a quickstart that needs no model and no server](https://github.co
 
 ## Configuration
 
-* See [the configuration table in Using text2cypher](https://text2cypher.readthedocs.io/en/latest/usage.html#configuration) for every option.
+* See the configuration table in [Using text2cypher](https://text2cypher.readthedocs.io/en/latest/usage.html#configuration) for every option.
 * Choose LLM models based on your requirements. Different models provide different balances of speed and accuracy and cost. See [LLM clients](https://text2cypher.readthedocs.io/en/latest/llm.html) for more details.
 
 

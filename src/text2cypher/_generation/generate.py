@@ -1,6 +1,6 @@
 """Ask an LLM for a Cypher query, or to correct one."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import cast
 
@@ -12,6 +12,7 @@ from text2cypher._generation.conversation import (
 from text2cypher._generation.extract import extract_cypher
 from text2cypher._generation.prompts import SkillsOffer, generator_system
 from text2cypher._generation.read_skill import chat_reading_skills
+from text2cypher._skills import Skill
 from text2cypher.llm import AsyncChatClient, AsyncLLMClient, Completion, Message, Usage
 from text2cypher.llm._base import supports_tools
 from text2cypher.schema import GraphSchema
@@ -42,6 +43,7 @@ async def generate_cypher(
     *,
     parameterize: bool = False,
     skills: bool = False,
+    catalog: Mapping[str, Skill] | None = None,
 ) -> Generation:
     """A query for ``question`` over ``schema``; empty if the LLM says it has none.
 
@@ -52,7 +54,8 @@ async def generate_cypher(
 
     With ``skills``, a client that can be offered tools lists the skills and may read the
     ones it needs (``Generation.skills`` says which, and the skills it read before are in
-    the prompt already); any other client has every skill in the prompt.
+    the prompt already); any other client has every skill in the prompt. ``catalog`` is the
+    skills on offer, by id; the ones that ship unless given.
 
     Raises:
         SkillLoopFailed: If a call fails after others of the same request succeeded.
@@ -60,12 +63,16 @@ async def generate_cypher(
     offer = None
     if skills:
         read = tuple(dict.fromkeys(i for round_ in rounds for i in round_.skills_read))
-        offer = SkillsOffer(supports_tools(llm), read)
+        offer = (
+            SkillsOffer(supports_tools(llm), read)
+            if catalog is None
+            else SkillsOffer(supports_tools(llm), read, catalog)
+        )
     system = generator_system(schema, parameterize=parameterize, skills=offer)
     messages = chat_messages(question, rounds, schema, parameterize=parameterize)
     if offer is not None and offer.tools:
         completion, read_now, usage = await chat_reading_skills(
-            cast("AsyncChatClient", llm), system, messages
+            cast("AsyncChatClient", llm), system, messages, offer.catalog
         )
         return Generation(
             extract_cypher(completion.text),

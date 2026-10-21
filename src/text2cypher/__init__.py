@@ -18,6 +18,7 @@ from text2cypher._results import (
     Records,
     Result,
 )
+from text2cypher._skills import Skill
 from text2cypher._validation import Issue, ValidationResult
 from text2cypher.llm import (
     AsyncChatClient,
@@ -57,6 +58,7 @@ __all__ = [
     "Records",
     "Result",
     "SchemaFilter",
+    "Skill",
     "Text2Cypher",
     "Text2CypherError",
     "Tool",

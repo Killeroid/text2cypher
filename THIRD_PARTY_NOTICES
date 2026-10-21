@@ -1,7 +1,7 @@
 Third-party notices
 ===================
 
-The "path-finding" skill (src/text2cypher/_skills/path-finding/skill.md) is adapted from
+The "path-finding" skill (src/text2cypher/_skills/path-finding/SKILL.md) is adapted from
 the skill of the same subject in the text-to-cypher project of FalkorDB
 (https://github.com/FalkorDB/text-to-cypher, assets/cypher-skills), which is itself derived
 from FalkorDB's skills repository (https://github.com/FalkorDB/skills). Its examples and

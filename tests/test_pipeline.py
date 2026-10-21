@@ -12,12 +12,14 @@ from text2cypher import (
     FakeLLM,
     GraphNotFoundError,
     LLMSchemaFilter,
+    Skill,
     Text2Cypher,
     ToolCall,
     Usage,
 )
 from text2cypher._generation.schema_filter import _SYSTEM as _FILTER_SYSTEM
 from text2cypher._results import Records
+from text2cypher.skills import builtin_skills
 
 pytestmark = pytest.mark.anyio
 
@@ -950,3 +952,87 @@ async def test_a_reply_with_no_text_on_a_real_graph_is_asked_again(
     assert result.status == "valid"
     assert [a.empty_reply for a in result.attempts] == [True, False]
     assert len(llm.calls) == 2
+
+
+MY_SKILL = Skill(
+    "our-labels", "Our labels", "Use for questions about our labels", "# Ours\n\nText"
+)
+
+
+async def test_your_own_skills_replace_the_ones_that_ship(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    llm = FakeLLM(
+        [
+            Completion("", None, (ToolCall("c", "read_skill", {"id": "our-labels"}),)),
+            Completion(reply("MATCH (p:Person) RETURN p.name"), None),
+        ]
+    )
+
+    result = await Text2Cypher(
+        falkordb_client, llm, config=Config(use_skills=True), skills=[MY_SKILL]
+    ).run("Who is in the graph?", movies_graph)
+
+    assert result.status == "valid"
+    assert result.attempts[0].skills == ("our-labels",)
+    system = llm.calls[0].system
+    assert "- our-labels: Use for questions about our labels" in system
+    assert "path-finding" not in system
+    assert llm.calls[1].messages[-1].content == MY_SKILL.text
+
+
+async def test_your_skills_can_be_added_to_the_ones_that_ship(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    llm = FakeLLM([reply("MATCH (p:Person) RETURN p.name")])
+
+    await Text2Cypher(
+        falkordb_client,
+        llm,
+        config=Config(use_skills=True),
+        skills=[*builtin_skills(), MY_SKILL],
+    ).run("Who is in the graph?", movies_graph)
+
+    assert "- our-labels:" in llm.calls[0].system
+    assert "- path-finding:" in llm.calls[0].system
+
+
+async def test_a_client_that_cannot_be_offered_tools_is_given_your_skills_in_the_prompt(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    llm = FakeLLM([reply("MATCH (p:Person) RETURN p.name")], tools=False)
+
+    await Text2Cypher(
+        falkordb_client, llm, config=Config(use_skills=True), skills=[MY_SKILL]
+    ).run("Who is in the graph?", movies_graph)
+
+    assert MY_SKILL.text in llm.calls[0].system
+    assert llm.calls[0].tools == ()
+
+
+def test_skills_need_use_skills_and_must_be_usable(falkordb_client: FalkorDB):
+    llm = FakeLLM([])
+    on = Config(use_skills=True)
+
+    with pytest.raises(ValueError, match="use_skills"):
+        Text2Cypher(falkordb_client, llm, skills=[MY_SKILL])
+    with pytest.raises(ValueError, match="empty"):
+        Text2Cypher(falkordb_client, llm, config=on, skills=[])
+    with pytest.raises(ValueError, match="have the id"):
+        Text2Cypher(falkordb_client, llm, config=on, skills=[MY_SKILL, MY_SKILL])
+
+
+def test_skills_too_long_for_every_prompt_are_refused_only_for_a_client_without_tools(
+    falkordb_client: FalkorDB,
+):
+    big = Skill("big", "Big", "Use for big", "x" * 17_000)
+    on = Config(use_skills=True)
+
+    Text2Cypher(falkordb_client, FakeLLM([]), config=on, skills=[big])
+    with pytest.raises(ValueError, match="16000"):
+        Text2Cypher(
+            falkordb_client,
+            FakeLLM([], tools=False),
+            config=on,
+            skills=[big],
+        )

@@ -1,6 +1,6 @@
 # API reference
 
-The public API is what `text2cypher`, `text2cypher.llm` and `text2cypher.schema` export. Modules whose name starts with an underscore are internal and may change without notice.
+The public API is what `text2cypher`, `text2cypher.llm`, `text2cypher.schema` and `text2cypher.skills` export. Modules whose name starts with an underscore are internal and may change without notice.
 
 ## Asking a question
 
@@ -51,6 +51,14 @@ The public API is what `text2cypher`, `text2cypher.llm` and `text2cypher.schema`
 .. autoclass:: text2cypher.FakeLLM
    :members:
 .. autoclass:: text2cypher.llm.Call
+```
+
+## Skills
+
+```{eval-rst}
+.. autoclass:: text2cypher.Skill
+.. autofunction:: text2cypher.skills.builtin_skills
+.. autofunction:: text2cypher.skills.load_skills
 ```
 
 ## The schema

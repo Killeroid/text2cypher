@@ -1,9 +1,9 @@
 """Let the model read skills, by calling a tool, while it writes a query."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from text2cypher._results import NO_TOKENS
-from text2cypher._skills import skills
+from text2cypher._skills import Skill, skills
 from text2cypher.llm import AsyncChatClient, Completion, Message, Tool, ToolCall, Usage
 
 READ_SKILL = Tool(
@@ -38,17 +38,22 @@ class SkillLoopFailed(Exception):
 
 
 async def chat_reading_skills(
-    llm: AsyncChatClient, system: str, messages: Sequence[Message]
+    llm: AsyncChatClient,
+    system: str,
+    messages: Sequence[Message],
+    catalog: Mapping[str, Skill] | None = None,
 ) -> tuple[Completion, tuple[str, ...], Usage | None]:
     """The model's reply, the ids of the skills it read, and the tokens of every call.
 
     The model is offered ``read_skill`` for up to three rounds; each call is answered with
     the skill (or what went wrong), and it is asked again. Then it must answer: the tool is
-    still offered but a call is forbidden.
+    still offered but a call is forbidden. ``catalog`` is what can be read, by id; the
+    skills that ship unless given.
 
     Raises:
         SkillLoopFailed: If a call fails, with what the earlier calls cost.
     """
+    available = skills() if catalog is None else catalog
     turns = list(messages)
     read: list[str] = []
     usage: Usage | None = NO_TOKENS
@@ -62,7 +67,9 @@ async def chat_reading_skills(
             turns.append(Message("assistant", completion.text, completion.tool_calls))
             for number, call in enumerate(completion.tool_calls):
                 content = (
-                    _too_many if number >= _CALLS_PER_ROUND else _answer(call, read)
+                    _too_many
+                    if number >= _CALLS_PER_ROUND
+                    else _answer(call, read, available)
                 )
                 turns.append(Message("tool", content, tool_call_id=call.id))
         completion = await llm.chat(system, turns, [READ_SKILL], tool_choice="none")
@@ -75,9 +82,8 @@ async def chat_reading_skills(
 _too_many = "Too many skills at once: ask for fewer."
 
 
-def _answer(call: ToolCall, read: list[str]) -> str:
+def _answer(call: ToolCall, read: list[str], available: Mapping[str, Skill]) -> str:
     """What the model is told about one call to ``read_skill``; the id is added to ``read``."""
-    available = skills()
     wanted = call.arguments.get("id")
     ids = ", ".join(available)
     if not isinstance(wanted, str) or not wanted:

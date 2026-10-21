@@ -91,7 +91,7 @@ root_packages = ["text2cypher", "evals"]
 name = "The layers of the package"
 type = "layers"
 layers = [
-    "text2cypher._pipeline",
+    "text2cypher._pipeline | text2cypher.skills",
     "text2cypher._workflow",
     "text2cypher._generation | text2cypher._execution | text2cypher._schema_source",
     "text2cypher._examples",

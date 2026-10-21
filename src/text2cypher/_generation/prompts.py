@@ -1,7 +1,9 @@
 """The prompts: what the LLM is told to write a query."""
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 
+from text2cypher._skills import Skill
 from text2cypher._skills import skills as shipped_skills
 from text2cypher.schema import GraphSchema, render_schema
 
@@ -118,15 +120,17 @@ class SkillsOffer:
             ``read_skill``; ``False`` to put every one in the prompt, for a client that
             cannot be offered tools.
         read: The ids of the skills the model has already read, which are in the prompt.
+        catalog: The skills on offer, by id; the ones that ship unless given.
     """
 
     tools: bool
     read: tuple[str, ...] = ()
+    catalog: Mapping[str, Skill] = field(default_factory=shipped_skills)
 
 
 def _skills_section(offer: SkillsOffer) -> str:
     """What the prompt says about the skills: a list to read from, those already read, or all."""
-    guides = shipped_skills()
+    guides = offer.catalog
     if not offer.tools:
         everything = "\n\n".join(skill.text for skill in guides.values())
         return f"Skills (guides to parts of FalkorDB that are easy to get wrong):\n\n{everything}"
@@ -212,7 +216,7 @@ def generator_system(
     unread = (
         skills is not None
         and skills.tools
-        and any(skill_id not in skills.read for skill_id in shipped_skills())
+        and any(skill_id not in skills.read for skill_id in skills.catalog)
     )
     rules = [
         *_RULES,

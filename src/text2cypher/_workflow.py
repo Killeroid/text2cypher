@@ -1,6 +1,6 @@
 """The loop: generate a query, validate it, correct it, and escalate the schema."""
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import replace
 
 from redis.exceptions import RedisError
@@ -26,6 +26,7 @@ from text2cypher._results import (
     SchemaScope,
     Status,
 )
+from text2cypher._skills import Skill
 from text2cypher._validation import ValidationResult
 from text2cypher.llm import AsyncChatClient, AsyncLLMClient, Usage
 from text2cypher.schema import GraphSchema, SchemaFilter
@@ -49,6 +50,7 @@ async def run_workflow(
     config: Config,
     schema_filter: SchemaFilter | AsyncSchemaFilter | None = None,
     execute: Callable[[str], Awaitable[Execution]] | None = None,
+    skills: Mapping[str, Skill] | None = None,
 ) -> Result:
     """Answer ``question`` with a query that passes ``validate``, if one can be found.
 
@@ -73,6 +75,9 @@ async def run_workflow(
     other; when the corrections run out the result is ``failed``. A timeout or a lost
     connection ends the loop with the valid query and the error, as they say nothing
     about the query.
+
+    With ``config.use_skills``, ``skills`` is what the LLM can read, by id; the skills that
+    ship unless given.
     """
     filtered, filter_usage = None, NO_TOKENS
     if schema_filter is not None:
@@ -94,7 +99,7 @@ async def run_workflow(
         )
         rounds = _with_schema_note(rounds, attempts, scope)
         generation = await _write(
-            llm, used, question, rounds, scope, attempts, filter_usage, config
+            llm, used, question, rounds, scope, attempts, filter_usage, config, skills
         )
         empties = empties + 1 if generation.empty else 0
         if not generation.query:
@@ -261,6 +266,7 @@ async def _write(
     attempts: Sequence[Attempt],
     filter_usage: Usage | None,
     config: Config,
+    catalog: Mapping[str, Skill] | None,
 ) -> Generation:
     """The next query, or an ``LLMError`` that keeps what was paid for.
 
@@ -275,6 +281,7 @@ async def _write(
             rounds,
             parameterize=config.use_parameters,
             skills=config.use_skills,
+            catalog=catalog,
         )
     except SkillLoopFailed as failed:
         partial = [Attempt("", None, scope, failed.usage)] if failed.calls else []

@@ -45,7 +45,8 @@ class Config:
     are easy to get wrong (graph algorithms, path finding, functions). It sees what each is
     for, and reads a skill, by calling a tool, only when the question needs it; each read
     is another call to the model, and a later correction already has what was read. A client
-    that cannot be offered tools is given every skill in the prompt instead.
+    that cannot be offered tools is given every skill in the prompt instead. Which skills,
+    the ones that ship or your own, is the ``skills`` argument of ``Text2Cypher``.
 
     The schema shows up to ``example_values`` values of each property (``title: STRING (e.g.
     'Alien', 'Heat')``), so the LLM writes a value the way the graph does: spelling, case,
