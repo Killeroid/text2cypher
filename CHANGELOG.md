@@ -2,6 +2,12 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Changed
+
+- `falkordb` is installed with its `hiredis` extra (`falkordb[hiredis]>=1.8.0`), so that `redis` parses the server's replies with the C parser. Nothing changes in the API. `hiredis` ships wheels for Python 3.12 to 3.14 on Linux, macOS and Windows.
+
 ## 3.0.0 - 2026-10-23
 
 A data dictionary that says in your words what the graph means, and the settings of how a model is asked as one dictionary, with a reasoning effort. Three things break: `OpenAIClient` is gone (the OpenAI SDK's own client takes its place), the prompts are Markdown, and the LLM schema filter's model starts with settings of its own. See [the migration guide](https://github.com/Killeroid/text2cypher/blob/main/MIGRATION.md).
