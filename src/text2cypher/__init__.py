@@ -36,7 +36,7 @@ from text2cypher.llm import (
     ToolCall,
     Usage,
 )
-from text2cypher.schema import GraphSchema, SchemaFilter, filter_schema
+from text2cypher.schema import DataDictionary, GraphSchema, SchemaFilter, filter_schema
 
 try:
     __version__ = version("text2cypher")
@@ -50,6 +50,7 @@ __all__ = [
     "Attempt",
     "Completion",
     "Config",
+    "DataDictionary",
     "DatabaseError",
     "FakeLLM",
     "FilterResult",

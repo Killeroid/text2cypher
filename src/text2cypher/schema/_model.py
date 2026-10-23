@@ -5,6 +5,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
+from text2cypher.schema._dictionary import DataDictionary
+
 _PLAIN_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
@@ -61,6 +63,9 @@ class GraphSchema:
         node_examples: Example values of the properties of each label, as they are written in
             a query (``'Alien'``, ``1999``): at most a few per property, and only for some.
         relationship_examples: The same for the properties of each relationship type.
+        data_dictionary: What the user says the labels, relationship types and properties
+            mean, if they said anything. It is not found from the graph: it is added to
+            what was.
     """
 
     node_properties: Mapping[str, Mapping[str, tuple[str, ...]]]
@@ -74,6 +79,7 @@ class GraphSchema:
     relationship_examples: Mapping[str, Mapping[str, tuple[str, ...]]] = field(
         default_factory=dict
     )
+    data_dictionary: DataDictionary | None = None
 
 
 def quote_identifier(name: str) -> str:

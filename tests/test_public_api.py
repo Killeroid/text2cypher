@@ -14,6 +14,7 @@ PUBLIC = {
         "Attempt",
         "Completion",
         "Config",
+        "DataDictionary",
         "DatabaseError",
         "FakeLLM",
         "FilterResult",
@@ -57,6 +58,7 @@ PUBLIC = {
     },
     "text2cypher.skills": {"Skill", "builtin_skills", "load_skills"},
     "text2cypher.schema": {
+        "DataDictionary",
         "GraphSchema",
         "Index",
         "Path",
@@ -90,7 +92,7 @@ def test_the_public_names_of_the_subpackages_are_the_same_objects_as_the_top_lev
         "Usage",
     ):
         assert getattr(text2cypher, name) is getattr(llm, name)
-    for name in ("GraphSchema", "SchemaFilter", "filter_schema"):
+    for name in ("DataDictionary", "GraphSchema", "SchemaFilter", "filter_schema"):
         assert getattr(text2cypher, name) is getattr(schema, name)
     assert text2cypher.Skill is skills.Skill
 

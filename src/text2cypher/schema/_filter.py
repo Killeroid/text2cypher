@@ -43,10 +43,10 @@ def restrict_schema(
     """The part of ``schema`` that the given labels and relationship types need.
 
     It keeps them, the paths that touch them, the labels and relationship types on
-    those paths, and the properties, indexes and example values of all of those. The
-    instance's functions are kept whole. A name that is not in the schema is ignored.
-    This is what ``filter_schema`` does once it has matched a question's words to names,
-    and what a filter of your own can end with.
+    those paths, and the properties, indexes, example values and data dictionary entries
+    of all of those. The instance's functions are kept whole. A name that is not in the
+    schema is ignored. This is what ``filter_schema`` does once it has matched a question's
+    words to names, and what a filter of your own can end with.
     """
     labels, types = set(labels), set(types)
     paths = tuple(
@@ -65,6 +65,11 @@ def restrict_schema(
         functions=schema.functions,  # they belong to the instance, not to a label
         node_examples=_only(schema.node_examples, kept_labels),
         relationship_examples=_only(schema.relationship_examples, kept_types),
+        data_dictionary=(
+            schema.data_dictionary.only(kept_labels, kept_types)
+            if schema.data_dictionary
+            else None
+        ),
     )
 
 

@@ -1,6 +1,13 @@
 from dataclasses import replace
 
-from text2cypher.schema import GraphSchema, Index, Path, filter_schema, restrict_schema
+from text2cypher.schema import (
+    DataDictionary,
+    GraphSchema,
+    Index,
+    Path,
+    filter_schema,
+    restrict_schema,
+)
 
 SCHEMA = GraphSchema(
     node_properties={
@@ -217,3 +224,51 @@ def test_restrict_schema_ignores_a_name_the_schema_does_not_have_and_takes_any_i
 
 def test_filter_schema_is_restrict_schema_after_matching_the_words():
     assert filter_schema(BIG, "Which studios?") == restrict_schema(BIG, ["Studio"], [])
+
+
+def test_restricting_a_schema_keeps_the_data_dictionary_of_what_it_keeps_alone():
+    described = replace(
+        SCHEMA,
+        data_dictionary=DataDictionary(
+            {
+                "nodes": {
+                    "Movie": {"description": "A film."},
+                    "Person": {"description": "Someone in film."},
+                    "Studio": {"description": "A company."},
+                },
+                "relationships": {
+                    "ACTED_IN": {"description": "A cast credit."},
+                    "MADE_BY": {"description": "Who produced it."},
+                },
+            }
+        ),
+    )
+
+    schema = restrict_schema(described, ["Studio"], [])
+
+    assert schema.data_dictionary == DataDictionary(
+        {
+            "nodes": {
+                "Movie": {"description": "A film."},
+                "Studio": {"description": "A company."},
+            },
+            "relationships": {"MADE_BY": {"description": "Who produced it."}},
+        }
+    )
+
+
+def test_a_schema_without_a_data_dictionary_is_restricted_without_one():
+    assert restrict_schema(SCHEMA, ["Studio"], []).data_dictionary is None
+
+
+def test_the_offline_filter_keeps_the_data_dictionary_of_what_it_keeps():
+    described = replace(
+        SCHEMA,
+        data_dictionary=DataDictionary(
+            {"nodes": {"Genre": {"description": "A kind of film."}}}
+        ),
+    )
+
+    assert filter_schema(described, "Which studios exist?").data_dictionary == (
+        DataDictionary({})
+    )
