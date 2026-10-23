@@ -1,3 +1,30 @@
+# Migrating from 2.x to 3.0
+
+3.0 changes one thing: how `OpenAIClient` is given its settings. If you never gave it any (`OpenAIClient("model")`, or the SDK's own client with `model=`), nothing changes.
+
+The keywords `temperature=`, `system_role=`, `timeout=`, `max_retries=` and `tools=` are gone, and they are now keys of one `model_options` dictionary, with two more (`reasoning_effort` and `extra`):
+
+Before (2.x):
+
+```python
+OpenAIClient("model", client=sdk, temperature=None, timeout=300, tools=False)
+```
+
+After (3.0):
+
+```python
+OpenAIClient(
+    "model",
+    client=sdk,
+    model_options={"temperature": None, "timeout": 300, "tools": False},
+)
+```
+
+* The values and defaults are the same, so a call that sets one is a one-for-one rewrite. Passing an old keyword is a `TypeError`.
+* A key that is not a setting is a `ValueError` that names it, and a type checker flags it too.
+* The same dictionary now works elsewhere: `Text2Cypher(client, AsyncOpenAI(), model="m", model_options={...})`, `LLMSchemaFilter(model="small", model_options={...})`, and `OpenAIClient.with_model("other", {...})`. A model that reasons wants `{"temperature": None, "reasoning_effort": "minimal"}`.
+* `LLMSchemaFilter(model="small")` with no client of its own used to ask the model with every setting of the main client. It now asks with no temperature (the server's own, which every model accepts; a reasoning model refuses 0), no `reasoning_effort` and no `extra`, and keeps the main client's `timeout`, `max_retries`, `system_role` and `tools`. If you want a temperature for the filter's model, such as 0 for a choice that does not vary, say so in `model_options`.
+
 # Migrating from 1.x to 2.0
 
 2.0 changes one thing you may have written yourself: the `chat` method of an LLM client. Everything else you may use keeps working. This page says what to change, and how to tell whether it affects you.

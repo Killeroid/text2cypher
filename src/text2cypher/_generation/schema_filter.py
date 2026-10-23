@@ -14,10 +14,12 @@ from text2cypher.llm import (
     AsyncChatClient,
     AsyncLLMClient,
     Message,
+    ModelOptions,
     OpenAIClient,
     Usage,
 )
 from text2cypher.llm._adapt import as_client
+from text2cypher.llm._openai import checked_options
 from text2cypher.schema import GraphSchema, SchemaFilter, restrict_schema
 from text2cypher.schema._model import quote_identifier
 
@@ -34,6 +36,16 @@ including the ones that connect them.
 Reply with JSON only, in one ```json code block, like this:
 {"labels": ["Person"], "relationship_types": ["ACTED_IN"]}
 If nothing in the schema is needed to answer the question, reply with empty lists."""
+
+# What the filter's model starts with, in place of the main model's: the settings that depend
+# on which model is asked. No temperature is the one value every model takes (a reasoning
+# model refuses 0, and the filter would swallow that and keep the whole schema), so the
+# choice is less repeatable; model_options={"temperature": 0} makes it so.
+_MODEL_START: ModelOptions = {
+    "temperature": None,
+    "reasoning_effort": None,
+    "extra": None,
+}
 
 _JSON_BLOCK = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 _JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
@@ -97,17 +109,36 @@ class LLMSchemaFilter:
             model to ask on the main client instead of the main model: the same SDK client
             and settings, for example a cheaper model (it needs an OpenAI client as the main
             one).
+        model_options: How to ask ``model``; see ``ModelOptions``. The model starts with no
+            ``temperature`` (the server's own, which every model accepts, so the choice is not
+            repeatable: ``{"temperature": 0}`` makes it so), no ``reasoning_effort`` and no
+            ``extra``, whatever the main client has, because they depend on the model. With
+            ``llm=None`` it keeps the main client's connection settings (``timeout``,
+            ``max_retries``, ``system_role`` and ``tools``); with an ``AsyncOpenAI`` as ``llm``,
+            any other setting left out takes the default of ``OpenAIClient``. It needs
+            ``model``, and it is an error with a client of the filter's own that is not an
+            ``AsyncOpenAI``.
     """
 
     llm: AsyncChatClient | AsyncLLMClient | AsyncOpenAI | None = None
     min_entities: int = field(default=20, kw_only=True)
     model: str | None = field(default=None, kw_only=True)
+    model_options: ModelOptions | None = field(
+        default=None, kw_only=True, hash=False
+    )  # a dict: not hashable
 
     def __post_init__(self) -> None:
         if self.min_entities < 0:
             raise ValueError("min_entities must be 0 or more")
+        if self.model_options is not None:
+            if self.llm is None and self.model is None:
+                raise ValueError("model_options goes with model=: it is how to ask it")
+            checked_options(self.model_options)
         if self.llm is not None:
-            object.__setattr__(self, "llm", as_client(self.llm, self.model))
+            options = self.model_options
+            if isinstance(self.llm, AsyncOpenAI):
+                options = cast("ModelOptions", {**_MODEL_START, **(options or {})})
+            object.__setattr__(self, "llm", as_client(self.llm, self.model, options))
 
     def bound(self, llm: AsyncChatClient | AsyncLLMClient) -> "LLMSchemaFilter":
         """This filter with a client of its own, taking the main ``llm`` if it has none.
@@ -128,7 +159,12 @@ class LLMSchemaFilter:
                 "which needs an OpenAI client as the main one: give the filter its own llm"
             )
         return replace(
-            self, llm=cast("OpenAIClient", llm).with_model(self.model), model=None
+            self,
+            llm=cast("OpenAIClient", llm).with_model(
+                self.model, {**_MODEL_START, **(self.model_options or {})}
+            ),
+            model=None,
+            model_options=None,
         )
 
     async def __call__(self, schema: GraphSchema, question: str) -> FilterResult:

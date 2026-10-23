@@ -161,7 +161,7 @@ async def test_a_model_without_a_system_role_still_gets_the_tool_turns():
     sdk, requests = openai_client(chat_reply("ok", None))
     call = ToolCall("c", "read_skill", {"id": "x"})
 
-    await OpenAIClient("m", client=sdk, system_role=False).chat(
+    await OpenAIClient("m", client=sdk, model_options={"system_role": False}).chat(
         "system",
         [
             Message("user", "q"),
@@ -243,7 +243,10 @@ def test_the_openai_client_can_say_it_cannot_be_offered_tools():
     sdk, _ = openai_client(chat_reply("x", None))
 
     assert supports_tools(OpenAIClient("m", client=sdk)) is True
-    assert supports_tools(OpenAIClient("m", client=sdk, tools=False)) is False
+    assert (
+        supports_tools(OpenAIClient("m", client=sdk, model_options={"tools": False}))
+        is False
+    )
 
 
 async def test_the_fake_records_the_tools_and_the_choice_and_can_script_a_tool_call():

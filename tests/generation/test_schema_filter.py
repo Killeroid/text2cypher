@@ -9,6 +9,8 @@ from text2cypher import (
     FilterResult,
     GraphSchema,
     LLMSchemaFilter,
+    ModelOptions,
+    OpenAIClient,
     Usage,
 )
 from text2cypher._generation import apply_filter
@@ -287,3 +289,119 @@ def test_binding_keeps_a_client_the_filter_already_has():
 
     assert LLMSchemaFilter(own).bound(other).llm is own
     assert LLMSchemaFilter().bound(other).llm is other
+
+
+async def test_the_filters_model_gets_the_options_and_the_main_client_keeps_its_own():
+    sdk, requests = openai_client(chat_reply("{}", None))
+    main = OpenAIClient(
+        "big",
+        client=sdk,
+        model_options={"reasoning_effort": "high", "temperature": 0.5},
+    )
+    options: ModelOptions = {"reasoning_effort": "minimal"}
+
+    bound = LLMSchemaFilter(model="small", min_entities=0, model_options=options)
+    await bound.bound(main)(SCHEMA, "q")
+
+    assert (requests[0]["model"], requests[0]["reasoning_effort"]) == (
+        "small",
+        "minimal",
+    )
+    assert "temperature" not in requests[0]  # not the main model's 0.5, nor 0
+    await main.complete("s", "u")
+    assert (requests[1]["reasoning_effort"], requests[1]["temperature"]) == (
+        "high",
+        0.5,
+    )
+
+
+async def test_the_filters_model_does_not_get_the_main_models_settings_but_the_connection():
+    timeouts: list[float | None] = []
+    sdk, requests = openai_client(chat_reply("{}", None), timeouts=timeouts)
+    main = OpenAIClient(
+        "big",
+        client=sdk,
+        model_options={
+            "temperature": None,
+            "reasoning_effort": "high",
+            "extra": {"seed": 1},
+            "timeout": 7,
+            "system_role": False,
+        },
+    )
+
+    await LLMSchemaFilter(model="small", min_entities=0).bound(main)(SCHEMA, "q")
+
+    assert "temperature" not in requests[0]
+    assert "reasoning_effort" not in requests[0]
+    assert "seed" not in requests[0]
+    assert timeouts == [7]
+    assert len(requests[0]["messages"]) == 1  # system_role=False is kept
+
+
+async def test_the_options_of_a_filter_with_an_async_openai_make_its_client():
+    sdk, requests = openai_client(chat_reply("{}", None))
+
+    await LLMSchemaFilter(
+        sdk,
+        model="small",
+        min_entities=0,
+        model_options={"temperature": None, "reasoning_effort": "low"},
+    )(SCHEMA, "q")
+
+    assert requests[0]["reasoning_effort"] == "low"
+    assert "temperature" not in requests[0]
+
+
+def test_model_options_are_refused_without_a_model_or_with_a_setting_that_is_not_one():
+    with pytest.raises(ValueError, match="model_options goes with model="):
+        LLMSchemaFilter(model_options={"reasoning_effort": "low"})
+    with pytest.raises(ValueError, match="temprature"):
+        LLMSchemaFilter(model="small", model_options={"temprature": 1})  # ty: ignore[invalid-key, invalid-argument-type]
+
+
+def test_model_options_are_refused_with_a_client_that_is_not_an_async_openai():
+    with pytest.raises(
+        ValueError, match=r"model_options is for an openai\.AsyncOpenAI"
+    ):
+        LLMSchemaFilter(FakeLLM([]), model_options={"reasoning_effort": "low"})
+
+
+def test_a_filter_with_model_options_can_still_be_hashed_and_compared():
+    one = LLMSchemaFilter(model="small", model_options={"temperature": 0})
+    other = LLMSchemaFilter(model="small", model_options={"temperature": 0})
+
+    assert one == other
+    assert hash(one) == hash(other)
+
+
+async def test_a_temperature_in_the_options_is_sent_to_the_filters_model():
+    sdk, requests = openai_client(chat_reply("{}", None))
+    main = OpenAIClient("big", client=sdk, model_options={"temperature": None})
+
+    await LLMSchemaFilter(
+        model="small", min_entities=0, model_options={"temperature": 0}
+    ).bound(main)(SCHEMA, "q")
+
+    assert requests[0]["temperature"] == 0
+
+
+async def test_the_filter_of_an_async_openai_starts_with_no_temperature_too():
+    sdk, requests = openai_client(chat_reply("{}", None))
+
+    await LLMSchemaFilter(sdk, model="small", min_entities=0)(SCHEMA, "q")
+    await LLMSchemaFilter(
+        sdk, model="small", min_entities=0, model_options={"temperature": 0}
+    )(SCHEMA, "q")
+
+    assert "temperature" not in requests[0]
+    assert requests[1]["temperature"] == 0
+
+
+async def test_a_client_of_the_filters_own_keeps_its_settings():
+    sdk, requests = openai_client(chat_reply("{}", None))
+    own = OpenAIClient("small", client=sdk)  # temperature 0, its default
+
+    await LLMSchemaFilter(own, min_entities=0)(SCHEMA, "q")
+
+    assert requests[0]["temperature"] == 0

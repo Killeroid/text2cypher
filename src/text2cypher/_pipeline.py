@@ -12,7 +12,7 @@ from text2cypher._results import Result
 from text2cypher._skills import Skill, catalog, check_inline, skills
 from text2cypher._validation import QueryValidator
 from text2cypher._workflow import run_workflow
-from text2cypher.llm import AsyncChatClient, AsyncLLMClient
+from text2cypher.llm import AsyncChatClient, AsyncLLMClient, ModelOptions
 from text2cypher.llm._adapt import as_client
 from text2cypher.llm._base import supports_tools
 from text2cypher.schema import SchemaFilter, filter_schema
@@ -29,9 +29,13 @@ class Text2Cypher:
             is given each correction as the turns of a conversation; one with only
             ``complete``, as one message.
         model: The model to ask, when ``llm`` is an ``openai.AsyncOpenAI``, which has none
-            of its own. The client is then used with the defaults of ``OpenAIClient``; use
-            that class for its options. Any other kind of ``llm`` chooses its own model, and
-            ``model`` with one is an error.
+            of its own. Any other kind of ``llm`` chooses its own model, and ``model`` with
+            one is an error.
+        model_options: How to ask ``model``, for an ``openai.AsyncOpenAI``: the
+            ``temperature``, ``reasoning_effort``, ``timeout`` and other settings of
+            ``ModelOptions``; a setting left out takes the default of ``OpenAIClient``. Any
+            other kind of ``llm`` has its own settings, and ``model_options`` with one is an
+            error.
         config: The limits of the correction loop, whether to execute, and how long a
             graph's schema is kept.
         schema_filter: Keeps what a question needs of the graph's schema; by default
@@ -56,12 +60,13 @@ class Text2Cypher:
         llm: AsyncChatClient | AsyncLLMClient | AsyncOpenAI,
         *,
         model: str | None = None,
+        model_options: ModelOptions | None = None,
         config: Config | None = None,
         schema_filter: SchemaFilter | AsyncSchemaFilter | None = filter_schema,
         skills: Sequence[Skill] | None = None,
     ) -> None:
         self._client = client
-        self._llm = as_client(llm, model)
+        self._llm = as_client(llm, model, model_options)
         self._config = config or Config()
         self._skills = self._skills_on_offer(skills)
         # A filter that has no client of its own is given the main one

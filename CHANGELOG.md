@@ -6,6 +6,13 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Added
 
+- `ModelOptions` (also `text2cypher.llm.ModelOptions`): how a model is asked, as one dictionary with every key optional: `temperature`, `system_role`, `timeout`, `max_retries`, `tools`, and the new `reasoning_effort` (a reasoning model's effort) and `extra` (other request fields such as `max_completion_tokens` or `seed`, which may not name what the client sets itself). A key that is not one is a `ValueError` that names it, and a type checker flags it too. `Text2Cypher(client, AsyncOpenAI(), model="m", model_options={"temperature": None, "reasoning_effort": "minimal"})` asks the SDK client's model that way, so the shortcut now works with a reasoning model; `model_options` is refused with any other kind of client, as `model=` is. `LLMSchemaFilter(model=..., model_options=...)` does the same for the filter's model (on the main client, or on an `AsyncOpenAI` it is given); on the main client the filter's model starts with no `temperature`, no `reasoning_effort` and no `extra`, and keeps the connection settings. `OpenAIClient.with_model(model, model_options)` keeps the settings it does not name, and `None` takes one away. Without `model_options` a request is the same as before.
+
+### Breaking
+
+- `OpenAIClient` takes its settings as `model_options={...}`; the keywords `temperature=`, `system_role=`, `timeout=`, `max_retries=` and `tools=` are gone. `OpenAIClient("m", temperature=None)` becomes `OpenAIClient("m", model_options={"temperature": None})`. This is why the next release is 3.0.0; see the migration guide.
+- The model of `LLMSchemaFilter(model="small")` with no client of its own is no longer asked with the main client's `temperature`, `reasoning_effort` or `extra`: they depend on the model, and a model could refuse them, which the filter hides by keeping the whole schema. It is asked with no temperature (the server's own, which every model takes, so the choice is not repeatable), and the same holds for an `AsyncOpenAI` given to the filter with `model=`. Give `model_options` to change that, for example `{"temperature": 0}`.
+
 - `examples/full_tour.py`: a tour of the library with the OpenAI SDK (`model="gpt-4o"`), the LLM schema filter, skills (the ones that ship and one of your own), execution and the other options, over questions that return values, nodes, lists of nodes, relationships, paths and nested nodes, with the nodes as plain objects and as your own classes. A test runs it with a scripted model on the embedded FalkorDB.
 
 ## 2.1.0 - 2026-10-21

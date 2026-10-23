@@ -849,6 +849,33 @@ async def test_an_async_openai_and_a_model_work_without_wrapping_it_first(
     assert requests[0]["messages"][0]["role"] == "system"
 
 
+async def test_model_options_are_how_the_model_of_an_async_openai_is_asked(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    sdk, requests = openai_client(
+        chat_reply("```cypher\nMATCH (p:Person) RETURN p.name\n```", None)
+    )
+
+    await Text2Cypher(
+        falkordb_client,
+        sdk,
+        model="a-model",
+        model_options={"temperature": None, "reasoning_effort": "minimal"},
+    ).run("Who?", movies_graph)
+
+    assert requests[0]["reasoning_effort"] == "minimal"
+    assert "temperature" not in requests[0]
+
+
+async def test_model_options_with_a_client_that_chooses_its_own_are_refused(
+    falkordb_client: FalkorDB,
+):
+    with pytest.raises(
+        ValueError, match=r"model_options is for an openai\.AsyncOpenAI"
+    ):
+        Text2Cypher(falkordb_client, FakeLLM([]), model_options={"temperature": 1})
+
+
 async def test_an_async_openai_without_a_model_is_refused_when_the_agent_is_made(
     falkordb_client: FalkorDB,
 ):

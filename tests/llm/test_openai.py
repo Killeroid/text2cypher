@@ -34,7 +34,7 @@ async def test_openai_client_sends_system_and_user_and_returns_text_and_usage():
 
 async def test_openai_client_omits_the_temperature_when_it_is_none():
     client, requests = openai_client(chat_reply("x", None))
-    llm = OpenAIClient("test-model", client=client, temperature=None)
+    llm = OpenAIClient("test-model", client=client, model_options={"temperature": None})
 
     await llm.complete("s", "u")
 
@@ -50,7 +50,9 @@ async def test_openai_client_without_usage_or_content_gives_no_usage_and_empty_t
 
 async def test_openai_client_can_send_one_user_message_for_a_model_without_a_system_role():
     client, requests = openai_client(chat_reply("x", None))
-    llm = OpenAIClient("test-model", client=client, system_role=False)
+    llm = OpenAIClient(
+        "test-model", client=client, model_options={"system_role": False}
+    )
 
     await llm.complete("be brief", "which movies?")
 
@@ -82,7 +84,9 @@ async def test_openai_client_sends_every_turn_of_a_conversation_after_the_system
 
 async def test_a_model_without_a_system_role_gets_the_system_text_in_the_first_turn():
     client, requests = openai_client(chat_reply("x", None))
-    llm = OpenAIClient("test-model", client=client, system_role=False)
+    llm = OpenAIClient(
+        "test-model", client=client, model_options={"system_role": False}
+    )
 
     await llm.chat(
         "be brief",
@@ -113,8 +117,12 @@ async def test_the_timeout_can_be_set_and_none_leaves_the_clients_own():
     timeouts: list[float | None] = []
     client, _ = openai_client(chat_reply("x", None), timeouts=timeouts, timeout=7)
 
-    await OpenAIClient("test-model", client=client, timeout=30).complete("s", "u")
-    await OpenAIClient("test-model", client=client, timeout=None).complete("s", "u")
+    await OpenAIClient(
+        "test-model", client=client, model_options={"timeout": 30}
+    ).complete("s", "u")
+    await OpenAIClient(
+        "test-model", client=client, model_options={"timeout": None}
+    ).complete("s", "u")
 
     assert timeouts == [30.0, 7.0]
 
@@ -123,7 +131,7 @@ async def test_a_failing_call_is_retried_as_many_times_as_asked():
     client, requests = openai_client(chat_reply("ok", None), failures=1)
 
     completion = await OpenAIClient(
-        "test-model", client=client, max_retries=1
+        "test-model", client=client, model_options={"max_retries": 1}
     ).complete("s", "u")
 
     assert completion.text == "ok"
@@ -134,9 +142,9 @@ async def test_with_no_retries_the_first_failure_is_the_error():
     client, requests = openai_client(chat_reply("ok", None), failures=1)
 
     with pytest.raises(InternalServerError):
-        await OpenAIClient("test-model", client=client, max_retries=0).complete(
-            "s", "u"
-        )
+        await OpenAIClient(
+            "test-model", client=client, model_options={"max_retries": 0}
+        ).complete("s", "u")
 
     assert len(requests) == 1
 

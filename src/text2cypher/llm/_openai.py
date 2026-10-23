@@ -2,8 +2,8 @@
 
 import copy
 import json
-from collections.abc import Sequence
-from typing import Any, Literal
+from collections.abc import Mapping, Sequence
+from typing import Any, Literal, TypedDict, cast
 
 from openai import NOT_GIVEN, AsyncOpenAI, omit
 from openai.types.chat import (
@@ -14,32 +14,108 @@ from openai.types.chat import (
 
 from text2cypher.llm._base import Completion, Message, Tool, ToolCall, Usage
 
+# What the library sets on every request itself, so ``extra`` may not
+_RESERVED = frozenset(
+    {
+        "model",
+        "messages",
+        "temperature",
+        "tools",
+        "tool_choice",
+        "reasoning_effort",
+        "stream",
+    }
+)
+
+
+class ModelOptions(TypedDict, total=False):
+    """The settings of how a model is asked, for ``OpenAIClient(model_options=...)``.
+
+    Every key is optional. Asking a new client, a key left out takes its default; for
+    ``OpenAIClient.with_model``, it keeps the value the client has.
+
+    Attributes:
+        temperature: The sampling temperature; ``None`` leaves it out, for models that only
+            accept their own (reasoning models). Default ``0``.
+        system_role: ``False`` puts the system text before the first user message's text,
+            for a model that has no system role. Default ``True``.
+        timeout: Seconds to wait for a reply before giving up on the call (it is then
+            retried, see ``max_retries``). The OpenAI SDK waits 10 minutes by default, and a
+            question can make a dozen calls, so a hung connection would hold a run for hours;
+            the default is 2 minutes. Raise it for a model that thinks for longer. It applies
+            to an ``AsyncOpenAI`` you pass too; ``None`` leaves that client's own timeout.
+        max_retries: How many times the SDK retries a call that fails on a timeout, a
+            connection error, a rate limit or a server error, with a pause between. ``None``
+            (the default) leaves the client's own setting (2 for one made here). When it
+            still fails, the run ends with an ``LLMError``.
+        tools: ``False`` says the model or server cannot be offered tools (some compatible
+            servers cannot), so the library does without them. Default ``True``.
+        reasoning_effort: How much a reasoning model thinks (``"minimal"``, ``"low"``,
+            ``"medium"``, ``"high"``, or what the server takes). ``None`` (the default)
+            leaves it out.
+        extra: Other request fields to send on every call, such as ``max_completion_tokens``,
+            ``seed`` or ``service_tier``; a name the SDK does not know is sent as it is.
+            ``model``, ``messages``, ``temperature``, ``tools``, ``tool_choice``,
+            ``reasoning_effort`` and ``stream`` are set by the client and are an error here.
+            A new ``extra`` replaces the old one as a whole.
+    """
+
+    temperature: float | None
+    system_role: bool
+    timeout: float | None
+    max_retries: int | None
+    tools: bool
+    reasoning_effort: str | None
+    extra: Mapping[str, Any] | None
+
+
+_DEFAULTS: ModelOptions = {
+    "temperature": 0,
+    "system_role": True,
+    "timeout": 120.0,
+    "max_retries": None,
+    "tools": True,
+    "reasoning_effort": None,
+    "extra": None,
+}
+
+
+def checked_options(options: Mapping[str, Any] | None) -> ModelOptions:
+    """``options`` as they are, after checking the names and what ``extra`` sets.
+
+    Raises:
+        ValueError: If a key is not a setting of ``ModelOptions``, or ``extra`` sets a field
+            the client sets itself.
+    """
+    unknown = (options or {}).keys() - _DEFAULTS.keys()
+    if unknown:
+        raise ValueError(
+            f"model_options has no {', '.join(sorted(unknown))}: "
+            f"the settings are {', '.join(_DEFAULTS)}"
+        )
+    taken = _RESERVED.intersection((options or {}).get("extra") or ())
+    if taken:
+        raise ValueError(
+            f"extra cannot set {', '.join(sorted(taken))}: the client sets them"
+        )
+    checked = dict(options or {})
+    if checked.get("extra") is not None:
+        checked["extra"] = dict(
+            checked["extra"]
+        )  # not the caller's own, who may change it
+    return cast("ModelOptions", checked)
+
 
 class OpenAIClient:
     """Asks an OpenAI chat model with a system message and the turns of the conversation.
-
-    A model that has no system role (some served by compatible servers) needs
-    ``system_role=False``: the system text then goes first in the first user message.
 
     Args:
         model: The model to ask. There is no default: the right one depends on the
             account and on the schema being prompted.
         client: The ``AsyncOpenAI`` to use, e.g. one with another ``base_url`` for a
             compatible server. By default one is made from the environment.
-        temperature: ``None`` leaves it out, for models that only accept their own.
-        system_role: ``False`` puts the system text before the first user message's text,
-            for a model that has no system role.
-        timeout: Seconds to wait for a reply before giving up on the call (it is then
-            retried, see ``max_retries``). The OpenAI SDK waits 10 minutes by default, and a
-            question can make a dozen calls, so a hung connection would hold a run for hours;
-            this is 2 minutes. Raise it for a model that thinks for longer. It applies to a
-            ``client`` you pass too; ``None`` leaves that client's own timeout.
-        max_retries: How many times the SDK retries a call that fails on a timeout, a
-            connection error, a rate limit or a server error, with a pause between. ``None``
-            leaves the client's own setting (2 for one made here). When it still fails, the
-            run ends with an ``LLMError``.
-        tools: ``False`` says the model or server cannot be offered tools (some compatible
-            servers cannot), so the library does without them.
+        model_options: How to ask it: ``temperature``, ``reasoning_effort``, ``timeout``
+            and the others of ``ModelOptions``. Left out, the defaults are used.
     """
 
     def __init__(
@@ -47,27 +123,40 @@ class OpenAIClient:
         model: str,
         *,
         client: AsyncOpenAI | None = None,
-        temperature: float | None = 0,
-        system_role: bool = True,
-        timeout: float | None = 120.0,
-        max_retries: int | None = None,
-        tools: bool = True,
+        model_options: ModelOptions | None = None,
     ) -> None:
-        self.supports_tools = tools
         self._model = model
-        # The copy shares the connection pool of the client it is made from
-        self._client = (client or AsyncOpenAI()).with_options(
-            timeout=NOT_GIVEN if timeout is None else timeout,
-            max_retries=NOT_GIVEN if max_retries is None else max_retries,
-        )
-        self._temperature = omit if temperature is None else temperature
-        self._system_role = system_role
+        self._sdk = client or AsyncOpenAI()
+        self._options: ModelOptions = {**_DEFAULTS, **checked_options(model_options)}
+        self._apply()
 
-    def with_model(self, model: str) -> "OpenAIClient":
-        """A client that asks ``model`` instead, with every other setting and the same SDK
-        client, for example a cheaper model for a part of the work."""
+    def _apply(self) -> None:
+        options = self._options
+        timeout, retries = options["timeout"], options["max_retries"]
+        # The copy shares the connection pool of the client it is made from
+        self._client = self._sdk.with_options(
+            timeout=NOT_GIVEN if timeout is None else timeout,
+            max_retries=NOT_GIVEN if retries is None else retries,
+        )
+        self.supports_tools = options["tools"]
+
+    def with_model(
+        self, model: str, model_options: ModelOptions | None = None
+    ) -> "OpenAIClient":
+        """A client that asks ``model`` instead, with the same SDK client and every setting
+        but the ones in ``model_options``, for example a cheaper model for a part of the work.
+
+        A model that thinks differently may need other settings: a key you leave out is
+        kept, and ``None`` takes a setting away (``{"reasoning_effort": None}``).
+
+        Raises:
+            ValueError: If ``model_options`` has an unknown key, or ``extra`` sets a field the
+                client sets itself.
+        """
         other = copy.copy(self)
         other._model = model
+        other._options = {**self._options, **checked_options(model_options)}
+        other._apply()
         return other
 
     async def complete(self, system: str, user: str) -> Completion:
@@ -93,9 +182,11 @@ class OpenAIClient:
         response = await self._client.chat.completions.create(
             model=self._model,
             messages=self._messages(system, messages),
-            temperature=self._temperature,
+            temperature=_omit_none(self._options["temperature"]),
             tools=offered,
             tool_choice=tool_choice if tools else omit,
+            reasoning_effort=_omit_none(self._options["reasoning_effort"]),
+            extra_body=dict(self._options["extra"] or {}) or None,
         )
         used = response.usage
         message = response.choices[0].message
@@ -111,10 +202,14 @@ class OpenAIClient:
     def _messages(
         self, system: str, turns: Sequence[Message]
     ) -> list[ChatCompletionMessageParam]:
-        if not self._system_role:
+        if not self._options["system_role"]:
             first = Message("user", f"{system}\n\n{turns[0].content}")
             return [_param(first), *map(_param, turns[1:])]
         return [{"role": "system", "content": system}, *map(_param, turns)]
+
+
+def _omit_none(value: Any) -> Any:
+    return omit if value is None else value
 
 
 def _param(turn: Message) -> ChatCompletionMessageParam:
