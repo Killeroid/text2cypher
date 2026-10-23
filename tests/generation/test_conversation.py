@@ -35,7 +35,7 @@ MOVIE = Round(
 
 def test_the_first_turn_is_the_question_and_nothing_else_without_rounds():
     assert chat_messages("Who acted in Heat?", [], SCHEMA) == [
-        Message("user", "Question: Who acted in Heat?")
+        Message("user", "# Question\nWho acted in Heat?")
     ]
 
 
@@ -43,7 +43,7 @@ def test_a_correction_is_the_query_the_llm_wrote_and_then_its_problems():
     messages = chat_messages("Who acted in Heat?", [PERSN], SCHEMA)
 
     assert messages == [
-        Message("user", "Question: Who acted in Heat?"),
+        Message("user", "# Question\nWho acted in Heat?"),
         Message("assistant", "```cypher\nMATCH (p:Persn) RETURN p.name\n```"),
         Message(
             "user",
@@ -102,14 +102,14 @@ def test_the_same_conversation_as_one_message_lists_the_attempts():
     message = folded_message("Who acted in Heat?", [PERSN, MOVIE], SCHEMA)
 
     assert message == (
-        "Question: Who acted in Heat?\n\n"
-        "Earlier attempts, oldest first:\n\n"
-        "Attempt 1\n"
+        "# Question\nWho acted in Heat?\n\n"
+        "# Earlier attempts, oldest first\n\n"
+        "## Attempt 1\n"
         "```cypher\nMATCH (p:Persn) RETURN p.name\n```\n"
         "This query has problems:\n\n"
         "- There is no label `Persn` in the schema.\n"
         "  Did you mean `Person`?\n\n"
-        "Attempt 2\n"
+        "## Attempt 2\n"
         "```cypher\nMATCH (m:Movie {name: 'Heat'}) RETURN m\n```\n"
         "This query has problems:\n\n"
         "- The label `Movie` has no property `name`.\n"
@@ -123,11 +123,13 @@ def test_the_note_goes_before_the_attempts_in_one_message():
 
     message = folded_message("q", [noted], SCHEMA)
 
-    assert message.startswith(f"Question: q\n\n{SCHEMA_NOTE}\n\nEarlier attempts")
+    assert message.startswith(
+        f"# Question\nq\n\n# Earlier attempts, oldest first\n\n{SCHEMA_NOTE}\n\n## Attempt 1"
+    )
 
 
 def test_without_rounds_one_message_is_the_question():
-    assert folded_message("q", [], SCHEMA) == "Question: q"
+    assert folded_message("q", [], SCHEMA) == "# Question\nq"
 
 
 def test_a_query_that_failed_when_it_ran_is_followed_by_the_error_and_a_closing_for_it():
@@ -136,7 +138,7 @@ def test_a_query_that_failed_when_it_ran_is_followed_by_the_error_and_a_closing_
     messages = chat_messages("How old?", [failed], SCHEMA)
 
     assert messages == [
-        Message("user", "Question: How old?"),
+        Message("user", "# Question\nHow old?"),
         Message("assistant", "```cypher\nMATCH (m:Movie) RETURN m.year % 0\n```"),
         Message(
             "user",

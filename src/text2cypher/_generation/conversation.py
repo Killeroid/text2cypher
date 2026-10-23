@@ -78,12 +78,12 @@ def folded_message(
         return generator_user(question)
     note = f"{SCHEMA_NOTE}\n\n" if any(r.schema_note for r in rounds) else ""
     attempts = "\n\n".join(
-        f"Attempt {number}\n{_fenced(r.query)}\n{_feedback(r, schema, parameterize)}"
+        f"## Attempt {number}\n{_fenced(r.query)}\n{_feedback(r, schema, parameterize)}"
         for number, r in enumerate(rounds, start=1)
     )
     return (
-        f"{generator_user(question)}\n\n{note}Earlier attempts, oldest first:\n\n"
-        f"{attempts}\n\n{CLOSING}"
+        f"{generator_user(question)}\n\n# Earlier attempts, oldest first\n\n"
+        f"{note}{attempts}\n\n{CLOSING}"
     )
 
 

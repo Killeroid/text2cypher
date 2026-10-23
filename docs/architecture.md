@@ -231,8 +231,8 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 - Names containing a backtick are skipped: FalkorDB has no escape for one, so no query can use such a name, and
   skipping them also removes any chance of injecting through a name read from the database. Other names are quoted
   only through `quote_identifier`, and only when rendered.
-- `render_schema` produces the Neo4j-style text the generator prompt carries: `Node properties:`,
-  `Relationship properties:`, `The relationships:`, and `Indexes:` and `User-defined functions:` when there are any. Types are upper-cased and joined with `|`; names that are not
+- `render_schema` produces the Neo4j-style text of the schema: `Node properties:`,
+  `Relationship properties:`, `The relationships:`, and `Indexes:` and `User-defined functions:` when there are any, and `Data dictionary:` when there is one. The prompts use the same sections through `schema_sections` as Markdown (`as_markdown`): `## Node properties`, `## Relationships`, and so on under `# Schema`. Types are upper-cased and joined with `|`; names that are not
   plain identifiers are backtick-quoted; sections with nothing to say are left out.
 - **Filtering** (`filter_schema(schema, question)`, the default `schema_filter`) matches the question's words to
   the words of label and relationship-type names: Snowball stems (`snowballstemmer`), camelCase and underscore
@@ -290,7 +290,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   `opencypher`, `cql` on a one-line block) is dropped; Windows line endings are accepted. An empty block means the
   LLM declined. A reply with no text at all is not a decline: `Generation.empty` is set, and the loop asks again once unless the reason it ended says not to (see Workflow, ADR-047, ADR-048). `Completion.finish_reason` is carried to `Generation` and to `Attempt`. A reply with no fence at all is taken as the query: a prose refusal then fails validation and the
   loop recovers, and a heuristic that declined it could decline a valid query.
-- **Prompts** are our own wording. The generator system prompt has the task, a short FalkorDB rules block, two
+- **Prompts** are our own wording, laid out as Markdown (ADR-055: `# Role`, `# Rules`, `# Skills`, `# Checks`, `# Output format`, `# Examples` with `## Example n`, `# Schema` with a `##` for each part; the user message is `# Question`, and the filter's are `# Role`, `# Rules`, `# Output format` and `# Schema`, `# Question`). The generator system prompt has the task, a short FalkorDB rules block, two
   examples on another schema and the rendered schema; the user message is only the question, so the question is
   never in the system prompt and the system prompt has a stable prefix. A correction reuses that system prompt and
   continues the conversation (`_generation/conversation.py`): the question, then for every failed query the LLM wrote

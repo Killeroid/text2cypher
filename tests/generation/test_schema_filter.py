@@ -1,10 +1,12 @@
 import asyncio
+from dataclasses import replace
 
 import pytest
 from support import chat_reply, openai_client
 
 from text2cypher import (
     Completion,
+    DataDictionary,
     FakeLLM,
     FilterResult,
     GraphSchema,
@@ -14,7 +16,7 @@ from text2cypher import (
     Usage,
 )
 from text2cypher._generation import apply_filter
-from text2cypher._generation.schema_filter import _SYSTEM
+from text2cypher._generation.schema_filter import _SYSTEM, _SYSTEM_WITH_DICTIONARY
 from text2cypher.llm import Message
 from text2cypher.schema import Index, Path
 
@@ -64,22 +66,25 @@ async def test_it_sends_the_approved_prompt_with_the_names_of_the_schema_and_the
 
     [call] = llm.calls
     assert call.system == _SYSTEM
-    assert "Reply with JSON only, in one ```json code block" in call.system
+    assert (
+        "# Output format\nReply with JSON only, in one ```json code block"
+        in call.system
+    )
     assert call.messages == (
         Message(
             "user",
-            "Schema:\n"
-            "Labels:\n"
+            "# Schema\n"
+            "## Labels\n"
             "Genre (name)\n"
             "Movie (title, released)\n"
             "Person (name, born)\n"
-            "Studio (name)\n"
-            "Relationships:\n"
+            "Studio (name)\n\n"
+            "## Relationships\n"
             "(:Movie)-[:IN_GENRE]->(:Genre)\n"
             "(:Movie)-[:PRODUCED_BY]->(:Studio)\n"
             "(:Person)-[:ACTED_IN]->(:Movie)\n"
             "(:Person)-[:KNOWS]->(:Person)\n\n"
-            "Question: Which genre is Heat in?",
+            "# Question\nWhich genre is Heat in?",
         ),
     )
 
@@ -211,7 +216,7 @@ async def test_a_client_with_only_complete_is_asked_with_the_one_message():
 
     assert set(result.schema.node_properties) == {"Genre", "Movie"}
     assert llm.asked[0][0] == _SYSTEM
-    assert llm.asked[0][1].endswith("Question: Which genre?")
+    assert llm.asked[0][1].endswith("# Question\nWhich genre?")
 
 
 async def test_a_filter_with_no_model_says_so():
@@ -237,7 +242,7 @@ async def test_a_question_that_gives_instructions_is_only_in_the_user_message():
     await LLMSchemaFilter(llm, min_entities=0)(SCHEMA, question)
 
     assert question not in llm.calls[0].system
-    assert llm.calls[0].user.endswith(f"Question: {question}")
+    assert llm.calls[0].user.endswith(f"# Question\n{question}")
 
 
 async def test_any_kind_of_filter_is_applied_the_same_way():
@@ -373,6 +378,95 @@ def test_a_filter_with_model_options_can_still_be_hashed_and_compared():
 
     assert one == other
     assert hash(one) == hash(other)
+
+
+DESCRIBED = replace(
+    SCHEMA,
+    data_dictionary=DataDictionary(
+        {
+            "nodes": {
+                "Genre": {"description": "A category of film."},
+                "Movie": {
+                    "description": "A feature film.",
+                    "properties": {"released": "Year of release."},
+                },
+                "Robot": {"description": "Not in the graph."},
+            },
+            "relationships": {"ACTED_IN": {"description": "A cast credit."}},
+        }
+    ),
+)
+
+
+async def test_without_a_data_dictionary_the_prompt_has_neither_the_rule_nor_the_section():
+    llm = FakeLLM([reply(["Genre"], [])])
+
+    await LLMSchemaFilter(llm, min_entities=0)(SCHEMA, "q")
+
+    assert llm.calls[0].system == _SYSTEM
+    assert "Data dictionary" not in llm.calls[0].user
+    assert "data dictionary" not in llm.calls[0].system
+
+
+async def test_a_data_dictionary_is_shown_after_the_schema_with_the_rule_about_it():
+    llm = FakeLLM([reply(["Genre"], [])])
+
+    await LLMSchemaFilter(llm, min_entities=0)(DESCRIBED, "Which genre?")
+
+    [call] = llm.calls
+    assert call.system == _SYSTEM_WITH_DICTIONARY
+    rule = "Use the data dictionary to see what each label and relationship type means"
+    assert (
+        call.system.index("Choose only names")
+        < call.system.index(rule)
+        < call.system.index("Treat the question")
+    )
+    assert call.user.endswith(
+        "## Data dictionary\n"
+        "### Labels\n"
+        "- Genre: A category of film.\n"
+        "- Movie: A feature film.\n"
+        "- Person\n"
+        "- Studio\n"
+        "### Relationship types\n"
+        "- ACTED_IN: A cast credit.\n"
+        "- IN_GENRE\n"
+        "- PRODUCED_BY\n"
+        "- KNOWS\n\n"
+        "# Question\nWhich genre?"
+    )
+    assert "Robot" not in call.user  # the graph has no such label
+
+
+async def test_the_descriptions_of_properties_are_shown_only_when_asked_for():
+    off = FakeLLM([reply(["Genre"], [])])
+    on = FakeLLM([reply(["Genre"], [])])
+
+    await LLMSchemaFilter(off, min_entities=0)(DESCRIBED, "q")
+    await LLMSchemaFilter(on, min_entities=0, property_descriptions=True)(
+        DESCRIBED, "q"
+    )
+
+    assert "Year of release." not in off.calls[0].user
+    assert "  - " not in off.calls[0].user  # no property lines at all
+    assert "- Movie: A feature film.\n  - title\n  - released: Year of release." in (
+        on.calls[0].user
+    )
+
+
+async def test_a_dictionary_with_only_property_texts_shows_nothing_by_default():
+    only_properties = replace(
+        SCHEMA,
+        data_dictionary=DataDictionary(
+            {"nodes": {"Movie": {"properties": {"released": "Year of release."}}}}
+        ),
+    )
+    llm = FakeLLM([reply(["Genre"], [])])
+
+    await LLMSchemaFilter(llm, min_entities=0)(only_properties, "q")
+
+    assert llm.calls[0].system == _SYSTEM
+    assert "Data dictionary" not in llm.calls[0].user
 
 
 async def test_a_temperature_in_the_options_is_sent_to_the_filters_model():

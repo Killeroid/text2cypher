@@ -104,7 +104,7 @@ class ScriptedModel:
     async def chat(self, system, messages, tools=None, *, tool_choice="auto"):
         from text2cypher import Completion, ToolCall
 
-        if system.startswith("You choose which parts of a graph database's schema"):
+        if "You choose which parts of a graph database's schema" in system:
             return Completion(
                 '```json\n{"labels": ["Person", "Movie", "Genre", "Studio", "Country", '
                 '"User"], "relationship_types": ["ACTED_IN", "DIRECTED", "IN_GENRE", '
@@ -112,9 +112,9 @@ class ScriptedModel:
                 None,
             )
         question = next(
-            m.content[len("Question: ") :]
+            m.content[len("# Question\n") :]
             for m in reversed(messages)
-            if m.role == "user" and m.content.startswith("Question: ")
+            if m.role == "user" and m.content.startswith("# Question\n")
         )
         skill = READS.get(question)
         if skill and tools and not any(m.role == "tool" for m in messages):

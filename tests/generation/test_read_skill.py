@@ -3,7 +3,7 @@ from support import FILM_SCHEMA, reply
 
 from text2cypher import Completion, FakeLLM, Message, ToolCall, Usage
 from text2cypher._generation import Generation, Round, SkillLoopFailed, generate_cypher
-from text2cypher._generation.prompts import SkillsOffer, generator_system
+from text2cypher._generation.prompts import SkillsOffer, _demoted, generator_system
 from text2cypher._generation.read_skill import READ_SKILL
 from text2cypher._skills import skills
 
@@ -50,7 +50,7 @@ async def test_the_model_reads_a_skill_and_is_asked_again_with_what_it_read():
     assert first.tool_choice == "auto"
     call = ToolCall("c1", "read_skill", {"id": "path-finding"})
     assert second.messages == (
-        Message("user", "Question: Route?"),
+        Message("user", "# Question\nRoute?"),
         Message("assistant", "", (call,)),
         Message("tool", skills()["path-finding"].text, tool_call_id="c1"),
     )
@@ -174,7 +174,7 @@ async def test_a_client_that_cannot_be_offered_tools_has_every_skill_in_the_prom
     [call] = llm.calls
     assert call.tools == ()
     for skill in skills().values():
-        assert skill.text in call.system
+        assert _demoted(skill.text) in call.system
     assert "read_skill" not in call.system
     assert generation == Generation(QUERY, Usage(10, 4), ())
 
@@ -192,7 +192,7 @@ async def test_a_client_with_only_complete_has_every_skill_in_the_prompt_too():
 
     await generate_cypher(llm, SCHEMA, "q", skills=True)
 
-    assert all(skill.text in llm.asked[0][0] for skill in skills().values())
+    assert all(_demoted(skill.text) in llm.asked[0][0] for skill in skills().values())
 
 
 async def test_without_the_option_no_tool_is_offered_and_the_prompt_has_no_skills():
@@ -216,7 +216,7 @@ async def test_what_an_earlier_request_read_is_in_the_prompt_of_the_next_one():
     assert call.system == generator_system(
         SCHEMA, skills=SkillsOffer(tools=True, read=("path-finding",))
     )
-    assert "Skills you have already read:\n\n# Path finding" in call.system
+    assert "# Skills you have already read\n\n## Path finding" in call.system
     # still offered: the ones not read yet
     assert call.tools == (READ_SKILL,)
     # and the conversation stays plain turns: the reading is not replayed

@@ -1,6 +1,7 @@
 """The entry point: ask a question of a graph."""
 
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import replace
 
 from falkordb.asyncio import FalkorDB
 from openai import AsyncOpenAI
@@ -15,7 +16,7 @@ from text2cypher._workflow import run_workflow
 from text2cypher.llm import AsyncChatClient, AsyncLLMClient, ModelOptions
 from text2cypher.llm._adapt import as_client
 from text2cypher.llm._base import supports_tools
-from text2cypher.schema import SchemaFilter, filter_schema
+from text2cypher.schema import DataDictionary, SchemaFilter, filter_schema
 
 
 class Text2Cypher:
@@ -48,6 +49,12 @@ class Text2Cypher:
             ``Config(use_skills=True)``. A skill is text that steers the model and goes to the
             LLM provider: use only text you trust. A client that cannot be offered tools is
             given every skill in each prompt, so they may add up to 16,000 characters.
+        data_dictionary: What the labels, relationship types and properties of the graph mean,
+            written by you; the prompts show it next to the schema and ``LLMSchemaFilter``
+            reads it. It is not read from the graph, so it is never kept with the schema, and
+            a name the graph does not have is left out of the prompt (``check`` says which).
+            It goes to the LLM provider like the schema does: write only what you trust. The
+            same dictionary is used for every graph the agent is asked about.
 
     Raises:
         ValueError: If ``skills`` is given without ``use_skills``, is empty, has two skills
@@ -64,8 +71,10 @@ class Text2Cypher:
         config: Config | None = None,
         schema_filter: SchemaFilter | AsyncSchemaFilter | None = filter_schema,
         skills: Sequence[Skill] | None = None,
+        data_dictionary: DataDictionary | None = None,
     ) -> None:
         self._client = client
+        self._data_dictionary = data_dictionary
         self._llm = as_client(llm, model, model_options)
         self._config = config or Config()
         self._skills = self._skills_on_offer(skills)
@@ -117,6 +126,8 @@ class Text2Cypher:
                 relationships), before any LLM call is made.
         """
         schema, source = await self._schemas.read(graph)
+        if self._data_dictionary is not None:
+            schema = replace(schema, data_dictionary=self._data_dictionary)
         # The validators answer from the snapshot the prompt was written from, so they cannot
         # disagree with it, and ask the database only to plan the query and confirm a problem
         validator = QueryValidator(

@@ -5,7 +5,12 @@ from dataclasses import dataclass, field
 
 from text2cypher._skills import Skill
 from text2cypher._skills import skills as shipped_skills
-from text2cypher.schema import GraphSchema, render_schema
+from text2cypher.schema import GraphSchema
+from text2cypher.schema._render import (
+    as_markdown,
+    data_dictionary_section,
+    schema_sections,
+)
 
 # The queries the rules and the examples show. tests/generation/test_prompt_rules.py runs each
 # of them on FalkorDB, so a rule or an example cannot silently stop being true.
@@ -105,6 +110,12 @@ _EXAMPLES_RULE = (
     "written (spelling and case)."
 )
 
+_DICTIONARY_RULE = (
+    "- Use the data dictionary to decide which label, relationship type or property the "
+    "question means; "
+    "write names in the query as the schema spells them."
+)
+
 _SKILLS_RULE = (
     "- Skills are short guides to parts of FalkorDB that are easy to get wrong. Read a skill, "
     "with read_skill, only when the question needs what it covers, before you write the query."
@@ -128,20 +139,34 @@ class SkillsOffer:
     catalog: Mapping[str, Skill] = field(default_factory=shipped_skills)
 
 
+def _demoted(text: str) -> str:
+    """``text`` with each Markdown heading one level down, so that a skill put under a heading
+    of the prompt does not look like a part of the prompt. A line in a code block is not one."""
+    lines, fenced = [], False
+    for line in text.split("\n"):
+        if line.startswith("```"):
+            fenced = not fenced
+        lines.append(f"#{line}" if line.startswith("#") and not fenced else line)
+    return "\n".join(lines)
+
+
 def _skills_section(offer: SkillsOffer) -> str:
     """What the prompt says about the skills: a list to read from, those already read, or all."""
     guides = offer.catalog
     if not offer.tools:
-        everything = "\n\n".join(skill.text for skill in guides.values())
-        return f"Skills (guides to parts of FalkorDB that are easy to get wrong):\n\n{everything}"
+        everything = "\n\n".join(_demoted(skill.text) for skill in guides.values())
+        return (
+            "# Skills\nGuides to parts of FalkorDB that are easy to get wrong:\n\n"
+            f"{everything}"
+        )
     unread = [skill for skill in guides.values() if skill.id not in offer.read]
     parts = []
     if unread:
         lines = "\n".join(f"- {skill.id}: {skill.description}" for skill in unread)
-        parts.append(f"Skills (read one with read_skill, by its id):\n{lines}")
+        parts.append(f"# Skills\nRead one with read_skill, by its id:\n{lines}")
     if offer.read:
-        read = "\n\n".join(guides[i].text for i in offer.read if i in guides)
-        parts.append(f"Skills you have already read:\n\n{read}")
+        read = "\n\n".join(_demoted(guides[i].text) for i in offer.read if i in guides)
+        parts.append(f"# Skills you have already read\n\n{read}")
     return "\n\n".join(parts)
 
 
@@ -166,39 +191,75 @@ _PARAMETER_CHECK = (
 )
 
 
-def _checks(parameterize: bool) -> str:
+CHECKS_LEAD = "Before you answer, check the query:"
+CHECKS_CLOSING = (
+    "If a check fails, fix the query first. Do not write the checks in your reply."
+)
+
+
+def check_bullets(parameterize: bool) -> list[str]:
+    """The checks the LLM is asked to make, one line each."""
     syntax, *others = _CHECKS
-    bullets = [syntax, *([_PARAMETER_CHECK] if parameterize else []), *others]
-    return (
-        "Before you answer, check the query:\n"
-        + "\n".join(bullets)
-        + "\nIf a check fails, fix the query first. Do not write the checks in your reply."
-    )
+    return [syntax, *([_PARAMETER_CHECK] if parameterize else []), *others]
+
+
+def _checks(parameterize: bool) -> str:
+    bullets = check_bullets(parameterize)
+    return f"# Checks\n{CHECKS_LEAD}\n" + "\n".join(bullets) + f"\n{CHECKS_CLOSING}"
 
 
 def _format_and_examples(parameterize: bool) -> str:
     example = EXAMPLE_PARAMETER_QUERY if parameterize else EXAMPLE_QUERY
     return f"""\
+# Output format
 Reply with the query in one ```cypher code block and nothing else.
 
-These examples use another schema; they show the format only. With \
-(:Employee {{name}})-[:WORKS_IN]->(:Department {{name}}):
+# Examples
+These examples use another schema; they show the format only.
 
+## Example 1
+Schema: (:Employee {{name}})-[:WORKS_IN]->(:Department {{name}})
 Question: Who works in Sales?
+Answer:
 ```cypher
 {example}
 ```
 
+## Example 2
+Schema: (:Employee {{name}})-[:WORKS_IN]->(:Department {{name}})
 Question: Remove all employees.
+Answer:
 ```cypher
-```
-"""
+```"""
 
 
 def _has_examples(schema: GraphSchema) -> bool:
     return any(schema.node_examples.values()) or any(
         schema.relationship_examples.values()
     )
+
+
+def rules_for(
+    schema: GraphSchema, *, parameterize: bool = False, skills_unread: bool = False
+) -> list[str]:
+    """The rules of the system prompt for ``schema``, one line (or one example) each."""
+    kinds = {index.type for index in schema.indexes}
+    return [
+        *_RULES,
+        _PARAMETER_RULE if parameterize else _INLINE_VALUES_RULE,
+        *(rule for kind, rule in _INDEX_RULES.items() if kind in kinds),
+        *([_FUNCTION_RULE] if schema.functions else []),
+        *([_EXAMPLES_RULE] if _has_examples(schema) else []),
+        *([_DICTIONARY_RULE] if data_dictionary_section(schema) else []),
+        *([_SKILLS_RULE] if skills_unread else []),
+    ]
+
+
+def _schema_block(schema: GraphSchema) -> str:
+    sections = schema_sections(schema)
+    if not sections:
+        return "# Schema\nThe graph has no data yet, so there is nothing to query."
+    return "# Schema\n" + "\n\n".join(as_markdown(section, 2) for section in sections)
 
 
 def generator_system(
@@ -209,36 +270,25 @@ def generator_system(
 ) -> str:
     """The system prompt that tells the LLM how to write a query for ``schema``.
 
-    With ``skills``, a section after the rules gives the model the skills, as ``skills``
-    says; without, the prompt has none.
+    It is Markdown: a heading for the role, the rules, the checks, the format of the
+    reply, the examples and the schema. With ``skills``, a section after the rules gives
+    the model the skills, as ``skills`` says; without, the prompt has none.
     """
-    kinds = {index.type for index in schema.indexes}
     unread = (
         skills is not None
         and skills.tools
         and any(skill_id not in skills.read for skill_id in skills.catalog)
     )
-    rules = [
-        *_RULES,
-        _PARAMETER_RULE if parameterize else _INLINE_VALUES_RULE,
-        *(rule for kind, rule in _INDEX_RULES.items() if kind in kinds),
-        *([_FUNCTION_RULE] if schema.functions else []),
-        *([_EXAMPLES_RULE] if _has_examples(schema) else []),
-        *([_SKILLS_RULE] if unread else []),
-    ]
+    rules = rules_for(schema, parameterize=parameterize, skills_unread=unread)
     section = f"\n\n{_skills_section(skills)}" if skills is not None else ""
-    text = (
-        render_schema(schema)
-        or "The graph has no data yet, so there is nothing to query."
-    )
     return (
-        f"{_INTRO}\n\nRules:\n"
+        f"# Role\n{_INTRO}\n\n# Rules\n"
         + "\n".join(rules)
         + section
         + f"\n\n{_checks(parameterize)}\n\n{_format_and_examples(parameterize)}"
-        f"\nSchema:\n{text}\n"
+        f"\n\n{_schema_block(schema)}\n"
     )
 
 
 def generator_user(question: str) -> str:
-    return f"Question: {question}"
+    return f"# Question\n{question}"

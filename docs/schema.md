@@ -37,7 +37,7 @@ The relationships:
 (:Person)-[:KNOWS]->(:Person)
 ```
 
-This text is what goes into the prompt. Names that are not plain identifiers are written in backticks, and a section with nothing in it is left out.
+This is the text of `render_schema`. In the prompt the same sections are Markdown, each under a heading of the `# Schema` part (`## Node properties`, `## Relationships` and so on). Names that are not plain identifiers are written in backticks, and a section with nothing in it is left out.
 
 ## Example values
 
@@ -65,10 +65,11 @@ On a large graph the whole schema makes a long prompt and many ways to go wrong,
 For "Which genre is the Matrix in?" on the graph above, the LLM gets:
 
 ```text
-Node properties:
+## Node properties
 Genre {name: STRING}
 Movie {rating: FLOAT, title: STRING, year: INTEGER}
-The relationships:
+
+## Relationships
 (:Movie)-[:IN_GENRE]->(:Genre)
 ```
 
@@ -99,7 +100,7 @@ agent = Text2Cypher(
 
 A filter that returns the whole schema counts as no filter, so no attempt is labelled "filtered" and nothing is retried.
 
-To keep a label, a relationship type and what goes with them (the paths they are on, those paths' ends, and the properties, indexes and example values of all of them), end with {py:func}`~text2cypher.schema.restrict_schema`:
+To keep a label, a relationship type and what goes with them (the paths they are on, those paths' ends, and the properties, indexes and example values of all of them), end with {py:func}`~text2cypher.schema.restrict_schema`. A filter that builds a new `GraphSchema` from scratch keeps only what it copies, so the data dictionary, the example values and the indexes are lost unless it copies them too:
 
 ```python
 from text2cypher.schema import restrict_schema
@@ -138,12 +139,65 @@ agent = Text2Cypher(
 * **Does it help?** On a 36-label schema (80 names) with 20 questions that use other words than the schema, the model chose the right part on the first try for 20 of 20 (Haiku) and 19 of 20 (Sonnet), where the word-matching filter did for 12 and 11. Every question still ended valid with either, because a miss is retried on the full schema: the LLM filter saves those retries and spends one call on every question, so the calls come out about even. Our recommendation is to use it on a large schema, and to leave the default for a small one.
 * **A cheaper model.** `LLMSchemaFilter(OpenAIClient("a-small-model"))`, or an `AsyncOpenAI` with `model=`, uses a client of its own. With no client, `LLMSchemaFilter(model="a-small-model")` asks the main client with that model instead, the same SDK client and connection settings, and no temperature (the server's own, so the choice is not repeatable; `model_options={"temperature": 0}` makes it so) and no reasoning effort unless you give `model_options`; that needs an OpenAI client as the main one, and says so if it is not.
 * **It replaces the lexical filter.** Choosing it means it runs alone: the offline filter does not run first, and the model is shown the whole schema.
-* **What the model sees:** the question, each label with its property names, and the paths between them. No types, no example values, no indexes. It answers with the labels and relationship types it needs, and those and the paths they are on are kept (the same as `restrict_schema`). A name that is not in the schema is dropped.
+* **What the model sees:** the question, each label with its property names, and the paths between them. No types, no example values, no indexes, and the data dictionary if you gave one (see [Describing the graph](#describing-the-graph)). It answers with the labels and relationship types it needs, and those and the paths they are on are kept (the same as `restrict_schema`). A name that is not in the schema is dropped.
 * **If it cannot be used, you lose nothing.** A reply that is not valid, names nothing in the schema or chooses nothing, and a call that fails, all keep the whole schema, so the question is written with everything. As with any filtered schema, one that turns out to be too small costs corrections, not the answer: the loop moves to the full schema after `attempts_w_filtered`.
 * **Small schemas are not filtered.** Below `min_entities` labels plus relationship types (20 by default) the whole schema is kept without asking, because there is little to cut. `min_entities=0` always asks.
 * **It costs a call.** The filter's tokens are on `result.filter_usage` and in `result.usage`, and in the `usage` of an `LLMError`. The default filter asks no model, so its `filter_usage` is zero.
 
 A filter you write may be `async` too. It returns a `GraphSchema`, or a {py:class}`~text2cypher.FilterResult` that also says what it cost, which is how it reports tokens ({py:class}`~text2cypher.AsyncSchemaFilter`).
+
+## Describing the graph
+
+A schema says what the graph is called, not what it means. `Rel` could be a rating or a relative, and "clients" could be `Customer`. A {py:class}`~text2cypher.DataDictionary` is what you say about it, in your words, and the prompts show it next to the schema:
+
+```python
+from text2cypher import DataDictionary, Text2Cypher
+
+dictionary = DataDictionary(
+    {
+        "nodes": {
+            "Person": {
+                "description": "A real person: an actor or a director.",
+                "properties": {"born": "Year of birth."},
+            },
+            "Movie": {"description": "A feature film."},
+        },
+        "relationships": {
+            "ACTED_IN": {"description": "The person played a role in the film."}
+        },
+    }
+)
+agent = Text2Cypher(client, llm, data_dictionary=dictionary)
+```
+
+The prompt then has a last part of the schema, and a rule to use it. For the graph above it is:
+
+```text
+## Data dictionary
+### Labels
+- Genre
+  - name
+- Movie: A feature film.
+  - rating
+  - title
+  - year
+- Person: A real person: an actor or a director.
+  - born: Year of birth.
+  - name
+### Relationship types
+- ACTED_IN: The person played a role in the film.
+  - role
+- IN_GENRE
+- KNOWS
+```
+
+* **Everything is optional.** Leave out a section, a label, a description, the properties or any one property. A relationship is described once per type, not for each path it is on.
+* **Every label, relationship type and property the graph has is listed, with its text where there is some.** Once the dictionary says anything, what it leaves out is shown by name only (`- Genre`), so that it does not look unimportant. A dictionary with no text for the graph shows nothing, and adds no rule. A name the graph does not have (a typo, or a label that was dropped) is left out, and a blank description is shown as no description; nothing fails. `dictionary.check(schema)` returns one message for each of them, so you can fix them: `node 'Moive' is not in the graph`, `node 'Movie' has a blank description`.
+* **It is checked when it is built.** A name or a description that is not a string is a `TypeError`, and a key that is not `nodes`, `relationships`, `description` or `properties` is a `ValueError` that names it.
+* **It is yours, not the graph's.** It is not read from the database or kept with the schema, so changing it takes effect on the next question. One dictionary is used for every graph the agent is asked about, so give an agent that asks several graphs only names that are in all of them, or use one agent for each.
+* **It goes to the LLM provider, and the model follows it.** Write it yourself, and do not load text from a source you do not trust.
+* **The LLM schema filter reads it too.** It is shown every label and relationship type with its description, and with `LLMSchemaFilter(property_descriptions=True)` the properties as well, with theirs. That helps a question that names a thing by what a property holds, and costs more tokens.
+* **It is also cut to what the filter keeps**, like the rest of the schema.
 
 ## Keeping the schema
 

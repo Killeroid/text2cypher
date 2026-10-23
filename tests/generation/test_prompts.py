@@ -7,11 +7,12 @@ from text2cypher._generation.prompts import (
     FULLTEXT_EXAMPLE,
     PARAMETER_EXAMPLE,
     SkillsOffer,
+    _demoted,
     generator_system,
     generator_user,
 )
 from text2cypher._skills import skills as shipped_skills
-from text2cypher.schema import Index
+from text2cypher.schema import DataDictionary, Index
 
 SCHEMA = FILM_SCHEMA
 
@@ -36,13 +37,13 @@ def test_generator_system_says_so_when_the_graph_is_empty():
 def test_generator_system_asks_the_model_to_check_its_query_before_it_replies():
     prompt = generator_system(SCHEMA)
 
-    checks = prompt[prompt.index("Before you answer") : prompt.index("Reply with")]
+    checks = prompt[prompt.index("Before you answer") : prompt.index("# Output format")]
     for check in ("syntax is valid", "in the schema", "points the way", "read-only"):
         assert check in checks
     assert "Do not write the checks in your reply." in checks
     # after the rules and before the format and the schema
-    assert prompt.index("Rules:") < prompt.index("Before you answer")
-    assert prompt.index("Reply with") < prompt.index("Schema:")
+    assert prompt.index("# Rules") < prompt.index("# Checks")
+    assert prompt.index("# Output format") < prompt.index("# Schema")
 
 
 def test_the_checks_and_the_example_follow_the_mode_of_the_values():
@@ -73,7 +74,7 @@ def test_the_rule_about_example_values_is_only_there_when_the_schema_has_them():
 
 
 def test_generator_user_is_the_question():
-    assert generator_user("Who acted in Heat?") == "Question: Who acted in Heat?"
+    assert generator_user("Who acted in Heat?") == "# Question\nWho acted in Heat?"
 
 
 def with_indexes(*indexes: Index) -> GraphSchema:
@@ -94,9 +95,9 @@ def test_a_schema_without_indexes_has_no_index_rules():
 def test_a_range_index_adds_the_rule_about_matching_it_directly():
     system = generator_system(with_indexes(Index("Person", "name", "RANGE")))
 
-    assert "Indexes:\nPerson.name: RANGE" in system
+    assert "## Indexes\nPerson.name: RANGE" in system
     assert "toLower(p.name) = 'ann'" in system
-    assert "FULLTEXT" not in system.replace("Indexes:", "")
+    assert "FULLTEXT" not in system.replace("Indexes", "")
     assert "db.idx.vector" not in system
 
 
@@ -112,7 +113,7 @@ def test_user_defined_functions_add_the_rule_to_call_only_those():
 
     system = generator_system(schema)
 
-    assert "User-defined functions:\nlib.double" in system
+    assert "## User-defined functions\nlib.double" in system
     assert "Call only the ones listed" in system
 
 
@@ -175,7 +176,7 @@ def test_with_tools_the_prompt_lists_the_skills_and_how_to_read_one():
         "- Skills are short guides to parts of FalkorDB that are easy to get wrong. Read a skill, "
         "with read_skill, only when the question needs what it covers, before you write the query."
     ) in prompt
-    assert "Skills (read one with read_skill, by its id):\n" in prompt
+    assert "# Skills\nRead one with read_skill, by its id:\n" in prompt
     for skill in shipped_skills().values():
         assert f"- {skill.id}: {skill.description}" in prompt
         # the guide itself is not in the prompt: the model reads it when it needs it
@@ -186,10 +187,10 @@ def test_the_skills_come_after_the_rules_and_before_the_checks():
     prompt = generator_system(SCHEMA, skills=SkillsOffer(tools=True))
 
     assert (
-        prompt.index("Rules:")
-        < prompt.index("Skills (read one")
-        < prompt.index("Before you answer")
-        < prompt.index("Schema:")
+        prompt.index("# Rules")
+        < prompt.index("# Skills\n")
+        < prompt.index("# Checks")
+        < prompt.index("# Schema")
     )
 
 
@@ -198,8 +199,8 @@ def test_what_was_read_is_in_the_prompt_and_only_the_rest_is_listed():
         SCHEMA, skills=SkillsOffer(tools=True, read=("path-finding",))
     )
 
-    assert "Skills you have already read:\n\n# Path finding" in prompt
-    assert shipped_skills()["path-finding"].body in prompt
+    assert "# Skills you have already read\n\n## Path finding\n\n### Usage" in prompt
+    assert _demoted(shipped_skills()["path-finding"].body) in prompt
     assert "- path-finding:" not in prompt
     assert "- functions:" in prompt
     assert "- graph-algorithms:" in prompt
@@ -210,16 +211,77 @@ def test_when_every_skill_has_been_read_there_is_nothing_left_to_list_or_ask_for
         SCHEMA, skills=SkillsOffer(tools=True, read=tuple(shipped_skills()))
     )
 
-    assert "Skills (read one" not in prompt
+    assert "Read one with read_skill" not in prompt
     assert "Read a skill, with read_skill" not in prompt
-    assert "Skills you have already read:" in prompt
+    assert "# Skills you have already read" in prompt
 
 
 def test_for_a_client_that_cannot_be_offered_tools_every_skill_is_in_the_prompt():
     prompt = generator_system(SCHEMA, skills=SkillsOffer(tools=False))
 
-    assert "Skills (guides to parts of FalkorDB that are easy to get wrong):" in prompt
+    assert "# Skills\nGuides to parts of FalkorDB that are easy to get wrong:" in prompt
     for skill in shipped_skills().values():
-        assert skill.text in prompt
+        assert _demoted(skill.text) in prompt
     assert "read_skill" not in prompt
-    assert "Skills (read one" not in prompt
+    assert "Read one with read_skill" not in prompt
+
+
+def test_the_rule_about_the_data_dictionary_is_only_there_when_it_has_something_to_show():
+    rule = (
+        "Use the data dictionary to decide which label, relationship type or property "
+        "the question means"
+    )
+    nothing_to_show = DataDictionary(
+        {"nodes": {"Robot": {"description": "Not in the graph."}}}
+    )
+    described = DataDictionary({"nodes": {"Movie": {"description": "A film."}}})
+
+    assert rule not in generator_system(SCHEMA)
+    assert rule not in generator_system(
+        replace(SCHEMA, data_dictionary=nothing_to_show)
+    )
+    assert rule in generator_system(replace(SCHEMA, data_dictionary=described))
+    assert "## Data dictionary\n### Labels\n- Movie: A film." in generator_system(
+        replace(SCHEMA, data_dictionary=described)
+    )
+
+
+def test_a_prompt_without_a_data_dictionary_is_the_one_there_always_was():
+    assert generator_system(replace(SCHEMA, data_dictionary=DataDictionary({}))) == (
+        generator_system(SCHEMA)
+    )
+
+
+def test_the_data_dictionary_comes_with_the_schema_after_the_rules_and_the_format():
+    system = generator_system(
+        replace(
+            SCHEMA,
+            data_dictionary=DataDictionary(
+                {"nodes": {"Movie": {"description": "A film."}}}
+            ),
+        )
+    )
+
+    assert (
+        system.index("Use the data dictionary")
+        < system.index("# Output format")
+        < system.index("# Schema")
+        < system.index("## Data dictionary")
+    )
+
+
+def test_a_skill_put_in_the_prompt_has_its_headings_one_level_down():
+    text = "# Name\n\n## Usage\nRead it.\n\n```python\n# a comment, not a heading\n```\n\n### Deeper"
+
+    assert _demoted(text) == (
+        "## Name\n\n### Usage\nRead it.\n\n```python\n# a comment, not a heading\n```\n\n#### Deeper"
+    )
+
+
+def test_the_headings_of_a_skill_are_below_the_headings_of_the_prompt():
+    prompt = generator_system(SCHEMA, skills=SkillsOffer(tools=False))
+
+    skills = prompt[prompt.index("# Skills\n") : prompt.index("# Checks")]
+    assert not [
+        line for line in skills.splitlines()[1:] if line.startswith("# ") or line == "#"
+    ]

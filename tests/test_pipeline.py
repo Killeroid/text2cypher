@@ -9,6 +9,7 @@ from support import chat_reply, openai_client, reply
 from text2cypher import (
     Completion,
     Config,
+    DataDictionary,
     FakeLLM,
     GraphNotFoundError,
     LLMSchemaFilter,
@@ -17,6 +18,7 @@ from text2cypher import (
     ToolCall,
     Usage,
 )
+from text2cypher._generation.prompts import _demoted
 from text2cypher._generation.schema_filter import _SYSTEM as _FILTER_SYSTEM
 from text2cypher._results import Records
 from text2cypher.skills import builtin_skills
@@ -359,7 +361,7 @@ async def test_the_indexes_of_the_graph_are_in_the_prompt(
     result = await Text2Cypher(falkordb_client, llm).run("Who is Keanu?", movies_graph)
 
     assert result.status == "valid"
-    assert "Indexes:\nPerson.name: RANGE" in llm.calls[0].system
+    assert "## Indexes\nPerson.name: RANGE" in llm.calls[0].system
     assert "cannot use the index" in llm.calls[0].system
 
 
@@ -431,6 +433,73 @@ async def test_the_type_check_makes_the_loop_correct_a_sum_of_text(
     assert "`sum` needs numbers" in llm.calls[1].user
 
 
+async def test_a_data_dictionary_is_in_the_prompt_for_the_names_the_graph_has(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    llm = FakeLLM([reply("MATCH (p:Person) RETURN p.name")])
+    dictionary = DataDictionary(
+        {
+            "nodes": {
+                "Person": {
+                    "description": "Someone in film.",
+                    "properties": {"name": "Full name."},
+                },
+                "Robot": {"description": "Not in the graph."},
+            }
+        }
+    )
+
+    result = await Text2Cypher(falkordb_client, llm, data_dictionary=dictionary).run(
+        "Who?", movies_graph
+    )
+
+    system = llm.calls[0].system
+    assert result.status == "valid"
+    assert (
+        "## Data dictionary\n### Labels\n- Movie\n  - title\n  - year\n"
+        "- Person: Someone in film.\n  - name: Full name.\n"
+        "### Relationship types\n- ACTED_IN\n  - role\n"
+    ) in system
+    assert "Robot" not in system
+    assert "Use the data dictionary to decide" in system
+
+
+async def test_without_a_data_dictionary_the_prompt_has_none(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    llm = FakeLLM([reply("MATCH (p:Person) RETURN p.name")])
+
+    await Text2Cypher(falkordb_client, llm).run("Who?", movies_graph)
+
+    assert "Data dictionary" not in llm.calls[0].system
+
+
+async def test_the_llm_filter_reads_the_agents_data_dictionary(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    llm = FakeLLM(
+        [
+            Completion(
+                '```json\n{"labels": ["Person"], "relationship_types": []}\n```', None
+            ),
+            reply("MATCH (p:Person) RETURN p.name"),
+        ]
+    )
+    dictionary = DataDictionary(
+        {"nodes": {"Person": {"description": "Someone in film."}}}
+    )
+
+    await Text2Cypher(
+        falkordb_client,
+        llm,
+        schema_filter=LLMSchemaFilter(min_entities=0),
+        data_dictionary=dictionary,
+    ).run("Who?", movies_graph)
+
+    assert "- Person: Someone in film." in llm.calls[0].user
+    assert "use the data dictionary" in llm.calls[0].system.lower()
+
+
 async def test_the_user_defined_functions_of_the_instance_are_in_the_prompt(
     falkordb_client: FalkorDB, movies_graph: str
 ):
@@ -453,7 +522,7 @@ async def test_the_user_defined_functions_of_the_instance_are_in_the_prompt(
         )
 
     assert result.status == "valid"
-    assert "User-defined functions:\npipeline_lib.double" in llm.calls[0].system
+    assert "## User-defined functions\npipeline_lib.double" in llm.calls[0].system
 
 
 async def test_a_query_with_a_parameter_header_is_validated_and_executed(
@@ -966,7 +1035,7 @@ async def test_a_model_that_reads_the_path_finding_skill_writes_a_query_that_run
     assert result.usage == Usage(30, 9)
     assert result.records is not None
     assert result.records.rows == ((["Keanu", "Matrix"],),)
-    assert "Skills (read one with read_skill, by its id):" in llm.calls[0].system
+    assert "# Skills\nRead one with read_skill, by its id:" in llm.calls[0].system
 
 
 async def test_a_reply_with_no_text_on_a_real_graph_is_asked_again(
@@ -1033,7 +1102,7 @@ async def test_a_client_that_cannot_be_offered_tools_is_given_your_skills_in_the
         falkordb_client, llm, config=Config(use_skills=True), skills=[MY_SKILL]
     ).run("Who is in the graph?", movies_graph)
 
-    assert MY_SKILL.text in llm.calls[0].system
+    assert _demoted(MY_SKILL.text) in llm.calls[0].system
     assert llm.calls[0].tools == ()
 
 

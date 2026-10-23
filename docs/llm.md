@@ -125,7 +125,7 @@ llm = FakeLLM(["```cypher\nMATCH (p:Person) RETURN p.name\n```"])
 result = await Text2Cypher(client, llm).run("Who is in the graph?", graph="movies")
 
 assert result.status == "valid"
-assert llm.calls[0].user == "Question: Who is in the graph?"
+assert llm.calls[0].user == "# Question\nWho is in the graph?"
 ```
 
 It raises when it is asked more times than it has replies. See also [Try it without a server or a model](usage.md#try-it-without-a-server-or-a-model).
