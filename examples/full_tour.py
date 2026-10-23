@@ -5,7 +5,11 @@ kind of answer: a single value, a list of values, one node, a list of nodes, a
 relationship, a path, nodes inside lists, a question that cannot be answered, and the
 same question without running the query. It shows the options that matter along the way:
 
-* the OpenAI SDK's own client with ``model="gpt-4o"``;
+* the OpenAI SDK's own client with ``model="gpt-4o"``, and ``model_options`` for how each model
+  is asked (a timeout and retries; a fixed temperature for the filter's model; a reasoning
+  model's effort goes there too);
+* a data dictionary that says in your words what the labels, relationship types and
+  properties mean, checked against the graph, so that a question may use your words;
 * an LLM schema filter that asks a cheaper model which labels a question needs;
 * skills the model reads as a tool (the ones that ship, and one of your own);
 * execution, example values, typo fixing, a kept schema and limits for the correction loop;
@@ -25,16 +29,17 @@ model is sent (the schema, example values from this graph) goes to OpenAI.
 
 import asyncio
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Self
 
+from cypher_guardrail import Snapshot
 from falkordb.asyncio import FalkorDB
 from openai import AsyncOpenAI
 
 from text2cypher import (
-    AsyncChatClient,
     Config,
     DatabaseError,
+    DataDictionary,
     GraphNode,
     GraphNotFoundError,
     GraphPath,
@@ -46,6 +51,7 @@ from text2cypher import (
     Text2Cypher,
     to_python,
 )
+from text2cypher.schema import render_schema, schema_from_snapshot
 from text2cypher.skills import builtin_skills
 
 GRAPH = "text2cypher_tour"
@@ -150,24 +156,82 @@ MATCH (:User)-[r:REVIEWED]->(m:Movie) RETURN m.title, avg(r.stars) AS rating ORD
 )
 
 
+# What the labels, relationship types and properties of the graph mean, in your words. It
+# goes into the prompt next to the schema, and the LLM schema filter reads it too. Every
+# part is optional, and a name the graph does not have is left out (see section 1). A skill
+# is different: it says how to do something, and the model reads it when a question needs it.
+DICTIONARY = DataDictionary(
+    {
+        "nodes": {
+            "Person": {
+                "description": "A real person in film: an actor, a director, or both.",
+                "properties": {
+                    "name": "Full name as credited.",
+                    "born": "Year of birth.",
+                },
+            },
+            "Movie": {
+                "description": "A feature film.",
+                "properties": {
+                    "title": "Title as released.",
+                    "year": "Year of first release.",
+                },
+            },
+            "Genre": {"description": "A category of film, such as Action or Drama."},
+            "Studio": {"description": "A company that produces films."},
+            "Country": {"description": "A country where people were born."},
+            "User": {
+                "description": (
+                    "A viewer who reviews movies and follows other viewers. "
+                    "Also called a critic or a reviewer."
+                ),
+            },
+        },
+        "relationships": {
+            "ACTED_IN": {
+                "description": "The person played a role in the movie.",
+                "properties": {"role": "The character the person played."},
+            },
+            "DIRECTED": {"description": "The person directed the movie."},
+            "IN_GENRE": {"description": "The movie belongs to the genre."},
+            "PRODUCED_BY": {"description": "The studio produced the movie."},
+            "BORN_IN": {"description": "The person was born in the country."},
+            "REVIEWED": {
+                "description": "The user rated the movie.",
+                "properties": {"stars": "The rating, from 1 (poor) to 5 (excellent)."},
+            },
+            "FOLLOWS": {
+                "description": "The first user follows the second: from the follower to the one followed."
+            },
+        },
+    }
+)
+
+
 def build_agent(
     client: FalkorDB,
-    llm: AsyncOpenAI | AsyncChatClient,
+    llm: AsyncOpenAI,
     *,
-    model: str | None = "gpt-4o",
-    filter_model: str | None = "gpt-4o-mini",
+    model: str = "gpt-4o",
+    filter_model: str = "gpt-4o-mini",
 ) -> Text2Cypher:
     """The agent the tour uses, with the options that matter spelled out.
 
     ``llm`` is the SDK's own client and ``model`` says which model writes the queries. An
     ``AsyncAzureOpenAI`` or a client for a compatible server (``base_url=...``) works the
-    same way, and so does a client of your own with a ``chat`` method (see the LLM guide),
-    which has its own model, so ``model`` and ``filter_model`` are ``None`` for it.
+    same way.
     """
     return Text2Cypher(
         client,
         llm,
         model=model,
+        # How the model is asked. These are the settings of OpenAIClient, and the defaults
+        # are a temperature of 0, a timeout of 120 seconds and the SDK's own retries. A
+        # reasoning model wants {"temperature": None, "reasoning_effort": "low"} instead,
+        # since it refuses a temperature.
+        model_options={"timeout": 60, "max_retries": 3},
+        # What the labels, relationship types and properties mean; see DICTIONARY.
+        data_dictionary=DICTIONARY,
         config=Config(
             # Run a query that passed validation, read-only, and correct it when FalkorDB
             # fails it. Without this you get the query and no rows.
@@ -200,7 +264,16 @@ def build_agent(
         # matching its words to names. filter_model is a cheaper model on the same client.
         # A schema with fewer than min_entities names is kept whole without asking; the
         # default is 20, which a real graph has, and this small one lowers it to show it.
-        schema_filter=LLMSchemaFilter(model=filter_model, min_entities=10),
+        # The filter's model starts with no temperature, whatever the writer has (a reasoning
+        # model refuses one), so 0 here makes its choice the same every time.
+        # property_descriptions=True also shows it what each property means; by default it
+        # reads the labels and relationship types only.
+        schema_filter=LLMSchemaFilter(
+            model=filter_model,
+            min_entities=10,
+            model_options={"temperature": 0},
+            property_descriptions=True,
+        ),
         # The skills that ship (graph algorithms, path finding, functions) and one more.
         # Giving `skills=` replaces the shipped ones, so they are listed here.
         skills=[*builtin_skills(), FILM_NOTES],
@@ -332,8 +405,46 @@ class Person:
 # correction after the filtered attempts are used up, or a decline, moves to "full schema".
 
 
+async def describe_the_graph(client: FalkorDB) -> None:
+    heading("1. Describe the graph: a data dictionary, and checking it")
+    # Read the schema the way the agent does, to check the dictionary against it. check()
+    # returns one message for each name the graph lacks and each blank description, and
+    # raises nothing: the prompt leaves a name the graph lacks out. Call it in a test.
+    schema = schema_from_snapshot(
+        await Snapshot.capture_async(client, GRAPH, types=True)
+    )
+    print(
+        f"  problems in the dictionary of this tour: {DICTIONARY.check(schema) or 'none'}"
+    )
+    # problems in the dictionary of this tour: none
+    with_mistakes = DataDictionary(
+        {"nodes": {"Moive": {"description": "A film."}, "Genre": {"description": ""}}}
+    )
+    for problem in with_mistakes.check(schema):
+        print(f"  problem: {problem}")
+    # problem: node 'Moive' is not in the graph
+    # problem: node 'Genre' has a blank description
+
+    # What the model is shown: every label, relationship type and property of the graph,
+    # with your words where you gave some. render_schema writes it as plain text; in the
+    # prompt it is the part "## Data dictionary" of the schema, as a nested list.
+    text = render_schema(replace(schema, data_dictionary=DICTIONARY))
+    print("  the model reads, after the schema:")
+    for line in text[text.index("Data dictionary:") :].splitlines()[:9]:
+        print(f"    {line}")
+    # Data dictionary:
+    # Labels:
+    # - Country: A country where people were born.
+    #   - name
+    # - Genre: A category of film, such as Action or Drama.
+    #   - name
+    # - Movie: A feature film.
+    #   - title: Title as released.
+    #   - year: Year of first release.
+
+
 async def values(agent: Text2Cypher) -> None:
-    heading("1. Values: a number, and lists of values")
+    heading("2. Values: a number, and lists of values")
     # The prompt asks for the properties a question wants (RETURN m.title), not whole nodes
     for question in (
         "How many movies are in the database?",
@@ -362,7 +473,7 @@ async def values(agent: Text2Cypher) -> None:
 
 
 async def nodes(agent: Text2Cypher) -> None:
-    heading("2. Nodes: one, and a list, as plain objects")
+    heading("3. Nodes: one, and a list, as plain objects")
     # A question about "the movie" or "the people" themselves gets whole nodes. The rows
     # of result.records hold the falkordb client's own values; as_python() makes them plain
     # objects. show() calls as_python() itself when it prints the rows (see above), which is
@@ -412,7 +523,7 @@ async def nodes(agent: Text2Cypher) -> None:
 
 
 async def relationships_and_paths(agent: Text2Cypher) -> None:
-    heading("3. A relationship, and a path (the model reads the path-finding skill)")
+    heading("4. A relationship, and a path (the model reads the path-finding skill)")
     result = await agent.run(
         "Show Keanu Reeves, the relationship, and the movie, for the movies he acted in.",
         graph=GRAPH,
@@ -445,7 +556,7 @@ async def relationships_and_paths(agent: Text2Cypher) -> None:
 
 
 async def nested(agent: Text2Cypher) -> None:
-    heading("4. Nodes inside lists, and your own skill")
+    heading("5. Nodes inside lists, and your own skill")
     # collect(...) makes a list of nodes in a cell; as_python() converts inside it
     result = await agent.run(
         "For each movie released before 2000, give the movie and the list of people "
@@ -476,8 +587,22 @@ async def nested(agent: Text2Cypher) -> None:
     # row: ('Speed', 2.0)
 
 
+async def in_your_words(agent: Text2Cypher) -> None:
+    heading("6. A question in your own words: the data dictionary")
+    # "Critic" is not a label of this graph. The dictionary says that a User is also called a
+    # critic or a reviewer, so the LLM filter keeps User and REVIEWED, and the model writes
+    # the query with them. Without the dictionary the word has nothing to point at.
+    show(await agent.run("Which critics gave The Matrix five stars?", graph=GRAPH))
+    # Q: Which critics gave The Matrix five stars?
+    # status: valid
+    #   attempt 1 (filtered schema):
+    #     MATCH (u:User)-[:REVIEWED {stars: 5}]->(:Movie {title: 'The Matrix'}) RETURN u.name
+    #   columns: ('u.name',)
+    #   row: ('Ana',)
+
+
 async def declined_and_query_only(agent: Text2Cypher, query_only: Text2Cypher) -> None:
-    heading("5. A question that cannot be answered, and the query without running it")
+    heading("7. A question that cannot be answered, and the query without running it")
     # A request to change data is declined, and a query that could write is never valid
     result = await agent.run("Delete every movie from before 1990.", graph=GRAPH)
     show(result)
@@ -505,7 +630,7 @@ async def declined_and_query_only(agent: Text2Cypher, query_only: Text2Cypher) -
 
 
 async def together(agent: Text2Cypher) -> None:
-    heading("6. Several questions at once with one agent")
+    heading("8. Several questions at once with one agent")
     # An agent keeps nothing between questions, so it can be shared by concurrent tasks
     results = await asyncio.gather(
         agent.run("How many people were born in the United States?", graph=GRAPH),
@@ -521,7 +646,7 @@ async def together(agent: Text2Cypher) -> None:
 
 
 async def when_things_go_wrong(agent: Text2Cypher) -> None:
-    heading("7. Errors")
+    heading("9. Errors")
     # Every error the library raises is a Text2CypherError. A graph that does not exist
     # fails before any call to the model is made.
     try:
@@ -545,10 +670,10 @@ async def when_things_go_wrong(agent: Text2Cypher) -> None:
 
 async def tour(
     client: FalkorDB,
-    llm: AsyncOpenAI | AsyncChatClient,
+    llm: AsyncOpenAI,
     *,
-    model: str | None = "gpt-4o",
-    filter_model: str | None = "gpt-4o-mini",
+    model: str = "gpt-4o",
+    filter_model: str = "gpt-4o-mini",
 ) -> None:
     """Seed the graph, ask every kind of question, and delete the graph."""
     graph = client.select_graph(GRAPH)
@@ -564,10 +689,12 @@ async def tour(
             model=model,
             config=Config(execute=False, example_values=0),
         )
+        await describe_the_graph(client)
         await values(agent)
         await nodes(agent)
         await relationships_and_paths(agent)
         await nested(agent)
+        await in_your_words(agent)
         await declined_and_query_only(agent, query_only)
         await together(agent)
         await when_things_go_wrong(agent)

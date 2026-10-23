@@ -1,10 +1,14 @@
 """The runnable examples keep working: the documentation includes them."""
 
+import json
 import subprocess
 import sys
 from pathlib import Path
 
+import httpx2 as httpx
 import pytest
+from openai import AsyncOpenAI
+from support import chat_reply, tool_calls_reply
 
 EXAMPLES = Path(__file__).parent.parent / "examples"
 
@@ -80,6 +84,10 @@ QUERIES = {
     "Who directed Gravity?": (
         "MATCH (p:Person)-[:DIRECTED]->(:Movie {title: 'Gravity'}) RETURN p.name"
     ),
+    "Which critics gave The Matrix five stars?": (
+        "MATCH (u:User)-[:REVIEWED {stars: 5}]->(:Movie {title: 'The Matrix'}) "
+        "RETURN u.name"
+    ),
     "Who directed Cast Away?": (
         "MATCH (p:Person)-[:DIRECTED]->(:Movie {title: 'Cast Away'}) RETURN p.name"
     ),
@@ -92,35 +100,58 @@ READS = {
 }
 
 
-class ScriptedModel:
-    """Answers the questions of the tour the way a model would: it keeps the whole
-    schema when asked to filter, reads a skill for two questions, and writes the query."""
+FILTER_REPLY = (
+    '```json\n{"labels": ["Person", "Movie", "Genre", "Studio", "Country", '
+    '"User"], "relationship_types": ["ACTED_IN", "DIRECTED", "IN_GENRE", '
+    '"PRODUCED_BY", "BORN_IN", "REVIEWED", "FOLLOWS"]}\n```'
+)
 
-    supports_tools = True
+
+class ScriptedOpenAI:
+    """The OpenAI SDK's own client over a mock transport, answering the questions of the tour
+    the way a model would: it keeps the whole schema when asked to filter, reads a skill for
+    two questions, and writes the query. It records each request, and the timeout it carried."""
 
     def __init__(self) -> None:
+        self.requests: list[dict] = []
+        self.timeouts: list[float | None] = []
         self.reads = 0
+        self.client = AsyncOpenAI(
+            api_key="test",
+            base_url="http://test/v1",
+            http_client=httpx.AsyncClient(transport=httpx.MockTransport(self._answer)),
+        )
 
-    async def chat(self, system, messages, tools=None, *, tool_choice="auto"):
-        from text2cypher import Completion, ToolCall
-
-        if "You choose which parts of a graph database's schema" in system:
-            return Completion(
-                '```json\n{"labels": ["Person", "Movie", "Genre", "Studio", "Country", '
-                '"User"], "relationship_types": ["ACTED_IN", "DIRECTED", "IN_GENRE", '
-                '"PRODUCED_BY", "BORN_IN", "REVIEWED", "FOLLOWS"]}\n```',
-                None,
-            )
+    def _answer(self, request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        self.requests.append(body)
+        self.timeouts.append(request.extensions["timeout"]["read"])
+        messages = body["messages"]
+        if (
+            "You choose which parts of a graph database's schema"
+            in messages[0]["content"]
+        ):
+            return httpx.Response(200, json=chat_reply(FILTER_REPLY, None))
         question = next(
-            m.content[len("# Question\n") :]
+            m["content"][len("# Question\n") :]
             for m in reversed(messages)
-            if m.role == "user" and m.content.startswith("# Question\n")
+            if m["role"] == "user" and m["content"].startswith("# Question\n")
         )
         skill = READS.get(question)
-        if skill and tools and not any(m.role == "tool" for m in messages):
+        if (
+            skill
+            and body.get("tools")
+            and not any(m["role"] == "tool" for m in messages)
+        ):
             self.reads += 1
-            return Completion("", None, (ToolCall("c1", "read_skill", {"id": skill}),))
-        return Completion(f"```cypher\n{QUERIES[question]}\n```", None)
+            reply = tool_calls_reply([("c1", "read_skill", json.dumps({"id": skill}))])
+            return httpx.Response(200, json=reply)
+        return httpx.Response(
+            200, json=chat_reply(f"```cypher\n{QUERIES[question]}\n```", None)
+        )
+
+    def asked(self, model: str) -> list[dict]:
+        return [r for r in self.requests if r["model"] == model]
 
 
 def load_tour():
@@ -141,15 +172,23 @@ async def test_the_full_tour_runs_every_section_with_a_scripted_model(
     falkordb_client, capsys
 ):
     tour = load_tour()
-    model = ScriptedModel()
+    model = ScriptedOpenAI()
 
-    await tour.tour(falkordb_client, model, model=None, filter_model=None)
+    await tour.tour(falkordb_client, model.client)
     out = capsys.readouterr().out
 
     assert tour.GRAPH not in await falkordb_client.list_graphs()  # cleaned up
     assert model.reads == 2
-    for section in range(1, 8):
+    for section in range(1, 10):
         assert f"\n{section}. " in out
+    # the dictionary: checked against the graph, and what the model reads
+    assert "problems in the dictionary of this tour: none" in out
+    assert "problem: node 'Moive' is not in the graph" in out
+    assert "problem: node 'Genre' has a blank description" in out
+    assert "- Movie: A feature film." in out
+    # a question in the words of the dictionary
+    assert "Which critics gave The Matrix five stars?" in out
+    assert "row: ('Ana',)" in out
     # values, one node, nodes of my own classes, a relationship, a path, nested nodes
     assert "row: (7,)" in out
     assert "as an object: node #" in out
@@ -171,3 +210,34 @@ async def test_the_full_tour_runs_every_section_with_a_scripted_model(
     assert "no such graph" in out
     assert "Who directed Cast Away? -> valid" in out
     assert "status: failed" not in out
+
+
+@pytest.mark.anyio
+async def test_the_tour_asks_each_model_the_way_its_options_say(
+    falkordb_client, capsys
+):
+    tour = load_tour()
+    model = ScriptedOpenAI()
+
+    await tour.tour(falkordb_client, model.client)
+    capsys.readouterr()
+
+    writer, chooser = model.asked("gpt-4o"), model.asked("gpt-4o-mini")
+    assert writer
+    assert chooser
+    # the filter's model is asked at temperature 0 (it would have none otherwise), and the
+    # writer with the default one; neither is asked for a reasoning effort
+    assert {r["temperature"] for r in chooser} == {0}
+    assert {r["temperature"] for r in writer} == {0}
+    assert not [r for r in model.requests if "reasoning_effort" in r]
+    # the timeout of the agent (60) is the one of the filter's model too, and the agent
+    # that only reads queries has the default (120)
+    assert set(model.timeouts) == {60, 120}
+    # the data dictionary is in the prompt of the writer, and the filter reads the
+    # descriptions of properties as well, because the tour asks for them
+    system = writer[0]["messages"][0]["content"]
+    assert "## Data dictionary\n### Labels\n" in system
+    assert "Also called a critic or a reviewer." in system
+    assert "Use the data dictionary to decide" in system
+    asked = chooser[0]["messages"][-1]["content"]
+    assert "- Movie: A feature film.\n  - title: Title as released." in asked

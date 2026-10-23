@@ -63,7 +63,7 @@ Always look at `result.status`. `valid` means the query passed the checks, not t
 
 There is also [a quickstart](https://github.com/Killeroid/text2cypher/blob/main/examples/quickstart.py) that needs no model and no server: it starts an embedded FalkorDB and answers with a scripted LLM, including one correction.
 
-For the breadth of the library, [a tour with the OpenAI SDK](https://github.com/Killeroid/text2cypher/blob/main/examples/full_tour.py) (it needs a FalkorDB server and an API key) asks questions that return values, single nodes, lists of nodes, relationships, paths and nodes inside lists, with the LLM schema filter, skills of your own, execution and the other options on, and shows nodes as plain objects and as your own classes.
+For the breadth of the library, [a tour with the OpenAI SDK](https://github.com/Killeroid/text2cypher/blob/main/examples/full_tour.py) (it needs a FalkorDB server and an API key) asks questions that return values, single nodes, lists of nodes, relationships, paths and nodes inside lists, with a data dictionary, the model options, the LLM schema filter, skills of your own, execution and the other options on, and shows nodes as plain objects and as your own classes.
 
 ## What is and is not checked
 
