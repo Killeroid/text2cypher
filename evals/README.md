@@ -74,6 +74,41 @@ Every company question ended valid either way, since a miss is retried on the fu
 data, so those are judged by validation alone. One run per cell by an agent, not a bare API call: read it as a signal.
 Not measured: example values, the check section, a larger schema, other models.
 
+## Measuring the format of the prompts (ADR-055)
+
+`format_trial.py` compares three layouts of the same prompts, **plain** (the package's own until the Markdown layout of 2026-10-23, rebuilt here), **Markdown** (the package's own now, adopted before this was measured and to be reverted if it does worse)
+and **XML**, with a real model through an OpenAI-compatible endpoint, with one call per question. The
+layouts are in `formats.py` (plain and XML are built from the package's own rules, checks, examples and schema
+sections, and Markdown is the package's prompt, so only the layout differs); `dictionaries.py` has a data dictionary for the movies and the company
+graphs (ADR-054); `live.py` loads the settings and makes the clients.
+
+The settings are in `.env` at the root (git-ignored): `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `CHEAP_MODEL`,
+`EXPENSIVE_MODEL` and `EXPENSIVE_MODEL_REASONING_EFFORT`, one `NAME: value` (or `NAME=value`) to a line. Nothing
+prints a setting. The cheap model is asked with temperature 0; the expensive one with its reasoning effort and no
+temperature.
+
+```
+uv run python -m evals.format_trial prompts            # write the prompts to evals/work/formats/prompts/ to read
+uv run python -m evals.format_trial run --dry-run      # the whole matrix with a stand-in model (no key, no network)
+uv run python -m evals.format_trial smoke              # one call to each model: do the settings work?
+uv run python -m evals.format_trial run --limit 3      # the real thing, 3 questions a cell (a cheap first look)
+uv run python -m evals.format_trial run                # the real thing
+uv run python -m evals.format_trial report             # the tables, from what is saved
+```
+
+Two experiments. **generator**: the whole pipeline with no corrections and the full schema (the format acts on
+the first query), the dictionary off or on, on `movies` (rows compared) and `company_synonyms` (validation only).
+**filter**: `LLMSchemaFilter` alone on the company schema, with no dictionary, with the descriptions of labels and
+relationship types (B), or with those of properties too (C), judged by whether it kept every name the gold query
+needs. 42 cells in all, about 900 calls. A cell is saved when done (`evals/work/formats/<cell>.jsonl`, with the
+query, the verdict and the tokens of each question) and is not run again unless `--force`, so an interrupted run
+resumes. A call that fails is a row with an `error`, counted apart and never as a success (the filter keeps the
+whole schema when its call fails, which would look right).
+
+Read the results as a signal: one run per cell at temperature 0, 24 and 20 questions, so a difference of one or two
+questions is noise. The dictionaries describe what the graphs are in plain words, and `company_synonyms` was written
+to need exactly that, so a gain from the dictionary there is the most it can give.
+
 ## Code
 
 `dataset.py` (the types), `datasets/` (`movies.py`, the film graph and questions; `company.py`, the large schema;
