@@ -2,9 +2,9 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 3.0.0 - 2026-10-23
 
-The next release is 3.0.0: `OpenAIClient` goes (the SDK's own client takes its place), the text of the prompts and the settings of the LLM filter's model change. See the migration guide.
+A data dictionary that says in your words what the graph means, and the settings of how a model is asked as one dictionary, with a reasoning effort. Three things break: `OpenAIClient` is gone (the OpenAI SDK's own client takes its place), the prompts are Markdown, and the LLM schema filter's model starts with settings of its own. See [the migration guide](https://github.com/Killeroid/text2cypher/blob/main/MIGRATION.md).
 
 ### Added
 

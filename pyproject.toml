@@ -1,6 +1,6 @@
 [project]
 name = "text2cypher"
-version = "2.1.0"
+version = "3.0.0"
 description = "text2cypher: Generate validated Cypher queries from natural language text with LLMs"
 readme = "README.md"
 authors = [
