@@ -117,14 +117,17 @@ A filter may also be asynchronous, and it may ask a model: see below.
 The lexical filter does not know that "people" means `Person` or that "films" means `Movie`, and when nothing matches it keeps the whole schema. On a large graph that is the expensive case. {py:class}`~text2cypher.LLMSchemaFilter` asks a model which labels and relationship types the question needs instead:
 
 ```python
-from text2cypher import LLMSchemaFilter, OpenAIClient, Text2Cypher
+from openai import AsyncOpenAI
+from text2cypher import LLMSchemaFilter, Text2Cypher
 
 # the main model chooses too
 agent = Text2Cypher(client, llm, schema_filter=LLMSchemaFilter())
 
-# or a cheaper model, for the choosing only
+# or a cheaper model on a client of its own, for the choosing only
 agent = Text2Cypher(
-    client, llm, schema_filter=LLMSchemaFilter(OpenAIClient("a-small-model"))
+    client,
+    llm,
+    schema_filter=LLMSchemaFilter(AsyncOpenAI(), model="a-small-model"),
 )
 
 # with the OpenAI SDK's client, the same client asks another model
@@ -137,7 +140,7 @@ agent = Text2Cypher(
 ```
 
 * **Does it help?** On a 36-label schema (80 names) with 20 questions that use other words than the schema, the model chose the right part on the first try for 20 of 20 (Haiku) and 19 of 20 (Sonnet), where the word-matching filter did for 12 and 11. Every question still ended valid with either, because a miss is retried on the full schema: the LLM filter saves those retries and spends one call on every question, so the calls come out about even. Our recommendation is to use it on a large schema, and to leave the default for a small one.
-* **A cheaper model.** `LLMSchemaFilter(OpenAIClient("a-small-model"))`, or an `AsyncOpenAI` with `model=`, uses a client of its own. With no client, `LLMSchemaFilter(model="a-small-model")` asks the main client with that model instead, the same SDK client and connection settings, and no temperature (the server's own, so the choice is not repeatable; `model_options={"temperature": 0}` makes it so) and no reasoning effort unless you give `model_options`; that needs an OpenAI client as the main one, and says so if it is not.
+* **A cheaper model.** `LLMSchemaFilter(AsyncOpenAI(), model="a-small-model")` uses a client of its own, and so does any client of your own. With no client, `LLMSchemaFilter(model="a-small-model")` asks the main client with that model instead, the same SDK client and connection settings, and no temperature (the server's own, so the choice is not repeatable; `model_options={"temperature": 0}` makes it so) and no reasoning effort unless you give `model_options`; that needs the OpenAI SDK's client as the main one, and says so if it is not.
 * **It replaces the lexical filter.** Choosing it means it runs alone: the offline filter does not run first, and the model is shown the whole schema.
 * **What the model sees:** the question, each label with its property names, and the paths between them. No types, no example values, no indexes, and the data dictionary if you gave one (see [Describing the graph](#describing-the-graph)). It answers with the labels and relationship types it needs, and those and the paths they are on are kept (the same as `restrict_schema`). A name that is not in the schema is dropped.
 * **If it cannot be used, you lose nothing.** A reply that is not valid, names nothing in the schema or chooses nothing, and a call that fails, all keep the whole schema, so the question is written with everything. As with any filtered schema, one that turns out to be too small costs corrections, not the answer: the loop moves to the full schema after `attempts_w_filtered`.

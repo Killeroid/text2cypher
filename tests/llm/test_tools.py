@@ -8,12 +8,12 @@ from text2cypher import (
     Completion,
     FakeLLM,
     Message,
-    OpenAIClient,
     Tool,
     ToolCall,
     Usage,
 )
 from text2cypher.llm._base import supports_tools
+from text2cypher.llm._chat_completions import ChatCompletionsAdapter
 
 pytestmark = pytest.mark.anyio
 
@@ -31,7 +31,7 @@ READ_SKILL = Tool(
 async def test_the_tools_are_offered_as_functions_with_a_json_schema():
     sdk, requests = openai_client(chat_reply("ok", None))
 
-    await OpenAIClient("m", client=sdk).chat(
+    await ChatCompletionsAdapter("m", client=sdk).chat(
         "system", [Message("user", "q")], [READ_SKILL]
     )
 
@@ -51,7 +51,7 @@ async def test_the_tools_are_offered_as_functions_with_a_json_schema():
 async def test_a_call_that_forbids_tools_says_so_and_keeps_them_offered():
     sdk, requests = openai_client(chat_reply("ok", None))
 
-    await OpenAIClient("m", client=sdk).chat(
+    await ChatCompletionsAdapter("m", client=sdk).chat(
         "s", [Message("user", "q")], [READ_SKILL], tool_choice="none"
     )
 
@@ -62,8 +62,8 @@ async def test_a_call_that_forbids_tools_says_so_and_keeps_them_offered():
 async def test_without_tools_neither_tools_nor_a_choice_is_sent():
     sdk, requests = openai_client(chat_reply("ok", None))
 
-    await OpenAIClient("m", client=sdk).chat("s", [Message("user", "q")])
-    await OpenAIClient("m", client=sdk).chat("s", [Message("user", "q")], [])
+    await ChatCompletionsAdapter("m", client=sdk).chat("s", [Message("user", "q")])
+    await ChatCompletionsAdapter("m", client=sdk).chat("s", [Message("user", "q")], [])
 
     for request in requests:
         assert "tools" not in request
@@ -82,7 +82,7 @@ async def test_the_model_asking_for_tools_comes_back_as_tool_calls_with_parsed_a
         )
     )
 
-    completion = await OpenAIClient("m", client=sdk).chat(
+    completion = await ChatCompletionsAdapter("m", client=sdk).chat(
         "s", [Message("user", "q")], [READ_SKILL]
     )
 
@@ -103,7 +103,7 @@ async def test_arguments_that_are_not_a_json_object_are_empty_so_the_model_can_b
 ):
     sdk, _ = openai_client(tool_calls_reply([("c", "read_skill", arguments)]))
 
-    completion = await OpenAIClient("m", client=sdk).chat(
+    completion = await ChatCompletionsAdapter("m", client=sdk).chat(
         "s", [Message("user", "q")], [READ_SKILL]
     )
 
@@ -114,7 +114,7 @@ async def test_a_call_of_any_kind_but_a_function_is_ignored():
     reply = tool_calls_reply([("c", "x", "{}")], kind="custom")
     sdk, _ = openai_client(reply)
 
-    completion = await OpenAIClient("m", client=sdk).chat(
+    completion = await ChatCompletionsAdapter("m", client=sdk).chat(
         "s", [Message("user", "q")], [READ_SKILL]
     )
 
@@ -125,7 +125,7 @@ async def test_the_turns_of_a_tool_exchange_are_sent_in_the_shape_the_api_wants(
     sdk, requests = openai_client(chat_reply("```cypher\nRETURN 1\n```", None))
     call = ToolCall("call_1", "read_skill", {"id": "functions"})
 
-    await OpenAIClient("m", client=sdk).chat(
+    await ChatCompletionsAdapter("m", client=sdk).chat(
         "system",
         [
             Message("user", "q"),
@@ -161,7 +161,9 @@ async def test_a_model_without_a_system_role_still_gets_the_tool_turns():
     sdk, requests = openai_client(chat_reply("ok", None))
     call = ToolCall("c", "read_skill", {"id": "x"})
 
-    await OpenAIClient("m", client=sdk, model_options={"system_role": False}).chat(
+    await ChatCompletionsAdapter(
+        "m", client=sdk, model_options={"system_role": False}
+    ).chat(
         "system",
         [
             Message("user", "q"),
@@ -179,7 +181,7 @@ async def test_a_model_without_a_system_role_still_gets_the_tool_turns():
 async def test_a_reply_with_text_and_no_tool_calls_is_as_before():
     sdk, _ = openai_client(chat_reply("```cypher\nRETURN 1\n```", None))
 
-    completion = await OpenAIClient("m", client=sdk).chat(
+    completion = await ChatCompletionsAdapter("m", client=sdk).chat(
         "s", [Message("user", "q")], [READ_SKILL]
     )
 
@@ -239,12 +241,14 @@ def test_a_client_can_be_offered_tools_if_it_says_so_or_takes_them(
     assert supports_tools(llm) is expected
 
 
-def test_the_openai_client_can_say_it_cannot_be_offered_tools():
+def test_the_adapter_can_say_it_cannot_be_offered_tools():
     sdk, _ = openai_client(chat_reply("x", None))
 
-    assert supports_tools(OpenAIClient("m", client=sdk)) is True
+    assert supports_tools(ChatCompletionsAdapter("m", client=sdk)) is True
     assert (
-        supports_tools(OpenAIClient("m", client=sdk, model_options={"tools": False}))
+        supports_tools(
+            ChatCompletionsAdapter("m", client=sdk, model_options={"tools": False})
+        )
         is False
     )
 
@@ -268,7 +272,9 @@ async def test_the_fake_records_the_tools_and_the_choice_and_can_script_a_tool_c
 async def test_the_reason_a_reply_ended_comes_back_with_it(reason: str):
     sdk, _ = openai_client(chat_reply_ending("some text", reason))
 
-    completion = await OpenAIClient("m", client=sdk).chat("s", [Message("user", "q")])
+    completion = await ChatCompletionsAdapter("m", client=sdk).chat(
+        "s", [Message("user", "q")]
+    )
 
     assert completion.finish_reason == reason
     assert completion.text == "some text"
@@ -279,7 +285,9 @@ async def test_a_refusal_with_no_text_is_named_as_one():
         chat_reply_ending(None, "stop", refusal="I cannot help with that.")
     )
 
-    completion = await OpenAIClient("m", client=sdk).chat("s", [Message("user", "q")])
+    completion = await ChatCompletionsAdapter("m", client=sdk).chat(
+        "s", [Message("user", "q")]
+    )
 
     assert completion.finish_reason == "refusal"
     assert completion.text == ""
@@ -290,7 +298,9 @@ async def test_a_refusal_next_to_text_leaves_the_reason_as_the_api_gave_it():
         chat_reply_ending("```cypher\nRETURN 1\n```", "stop", refusal="partly")
     )
 
-    completion = await OpenAIClient("m", client=sdk).chat("s", [Message("user", "q")])
+    completion = await ChatCompletionsAdapter("m", client=sdk).chat(
+        "s", [Message("user", "q")]
+    )
 
     assert completion.finish_reason == "stop"
 

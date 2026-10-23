@@ -103,7 +103,7 @@ On a large graph the whole schema makes a long prompt and many ways to go wrong,
 You can switch to an LLM based filter which asks a model which labels and relationship types the question needs instead:
 
 ```python
-from text2cypher import LLMSchemaFilter, OpenAIClient, Text2Cypher
+from text2cypher import LLMSchemaFilter, Text2Cypher
 
 # the main model chooses too
 agent = Text2Cypher(client, llm, schema_filter=LLMSchemaFilter())

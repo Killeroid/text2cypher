@@ -12,12 +12,12 @@ from text2cypher import (
     GraphSchema,
     LLMSchemaFilter,
     ModelOptions,
-    OpenAIClient,
     Usage,
 )
 from text2cypher._generation import apply_filter
 from text2cypher._generation.schema_filter import _SYSTEM, _SYSTEM_WITH_DICTIONARY
 from text2cypher.llm import Message
+from text2cypher.llm._chat_completions import ChatCompletionsAdapter
 from text2cypher.schema import Index, Path
 
 pytestmark = pytest.mark.anyio
@@ -298,7 +298,7 @@ def test_binding_keeps_a_client_the_filter_already_has():
 
 async def test_the_filters_model_gets_the_options_and_the_main_client_keeps_its_own():
     sdk, requests = openai_client(chat_reply("{}", None))
-    main = OpenAIClient(
+    main = ChatCompletionsAdapter(
         "big",
         client=sdk,
         model_options={"reasoning_effort": "high", "temperature": 0.5},
@@ -323,7 +323,7 @@ async def test_the_filters_model_gets_the_options_and_the_main_client_keeps_its_
 async def test_the_filters_model_does_not_get_the_main_models_settings_but_the_connection():
     timeouts: list[float | None] = []
     sdk, requests = openai_client(chat_reply("{}", None), timeouts=timeouts)
-    main = OpenAIClient(
+    main = ChatCompletionsAdapter(
         "big",
         client=sdk,
         model_options={
@@ -471,7 +471,9 @@ async def test_a_dictionary_with_only_property_texts_shows_nothing_by_default():
 
 async def test_a_temperature_in_the_options_is_sent_to_the_filters_model():
     sdk, requests = openai_client(chat_reply("{}", None))
-    main = OpenAIClient("big", client=sdk, model_options={"temperature": None})
+    main = ChatCompletionsAdapter(
+        "big", client=sdk, model_options={"temperature": None}
+    )
 
     await LLMSchemaFilter(
         model="small", min_entities=0, model_options={"temperature": 0}
@@ -494,7 +496,7 @@ async def test_the_filter_of_an_async_openai_starts_with_no_temperature_too():
 
 async def test_a_client_of_the_filters_own_keeps_its_settings():
     sdk, requests = openai_client(chat_reply("{}", None))
-    own = OpenAIClient("small", client=sdk)  # temperature 0, its default
+    own = ChatCompletionsAdapter("small", client=sdk)  # temperature 0, its default
 
     await LLMSchemaFilter(own, min_entities=0)(SCHEMA, "q")
 

@@ -21,7 +21,7 @@ text2cypher asks an LLM to write the query, checks it against the real graph wit
 * **Skills** (optional): short guides to graph algorithms, path finding and the functions FalkorDB has, which the LLM reads with a tool only when a question needs them. Measured: they help a smaller model, and a stronger one gains little.
 * **Typos fixed without the LLM** (optional): a misspelled label, relationship type or property that is a likely typo of exactly one name in your graph is replaced and the query validated again, at no cost in LLM calls.
 * **Optional execution**: run the query read-only, with a timeout, and get the rows; a query that FalkorDB fails at run time is sent back to the LLM like any other problem.
-* **Bring your own LLM**: a small protocol, `chat` (the conversation as turns) or just `complete`, with an OpenAI client included, whose settings (temperature, reasoning effort and others) are one dictionary. Async throughout.
+* **Bring your own LLM**: a small protocol, `chat` (the conversation as turns) or just `complete`, and the OpenAI SDK's own client accepted as it is, with the settings of how a model is asked (temperature, reasoning effort and others) as one dictionary. Async throughout.
 
 ## Installation
 

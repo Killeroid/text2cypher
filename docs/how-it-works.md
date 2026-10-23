@@ -109,7 +109,7 @@ An empty fenced block means the LLM sees no way to answer the question with the 
 
 ## When the LLM sends nothing
 
-A reply with no text at all, or only white space, is not a decline: the model did not say that it cannot answer, the call just returned nothing. What happens depends on why it ended, when the client says (`attempt.finish_reason`; `OpenAIClient` does):
+A reply with no text at all, or only white space, is not a decline: the model did not say that it cannot answer, the call just returned nothing. What happens depends on why it ended, when the client says (`attempt.finish_reason`; the OpenAI SDK's client does):
 
 * **`refusal`**: the model refused to answer. That is a decline, so it follows the rules above: asked again on the full schema if the first try used a filtered one, otherwise `unanswerable`.
 * **`length` or `content_filter`**: the reply hit a token limit, or the provider blocked it. The same request would hit the same limit or filter, so it is not asked again: the run ends as `failed` with no query, and the attempt says why. For `length`, raise the model's limit (a model that thinks first can use it all before it writes anything).

@@ -18,7 +18,7 @@ from typing import Literal
 
 from openai import AsyncOpenAI
 
-from text2cypher.llm import OpenAIClient
+from text2cypher.llm._chat_completions import ChatCompletionsAdapter
 
 ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 REQUIRED = (
@@ -67,7 +67,7 @@ def model_name(which: Which) -> str:
     return os.environ["CHEAP_MODEL" if which == "cheap" else "EXPENSIVE_MODEL"]
 
 
-def make_client(which: Which) -> OpenAIClient:
+def make_client(which: Which) -> ChatCompletionsAdapter:
     """The library's own client for the cheap or the expensive model.
 
     The expensive one is asked with its reasoning effort, and with no temperature, which
@@ -77,12 +77,12 @@ def make_client(which: Which) -> OpenAIClient:
     load_env()
     sdk = AsyncOpenAI()  # the key and the endpoint come from the environment
     if which == "cheap":
-        return OpenAIClient(
+        return ChatCompletionsAdapter(
             model_name(which),
             client=sdk,
             model_options={"temperature": 0, "max_retries": 5},
         )
-    return OpenAIClient(
+    return ChatCompletionsAdapter(
         model_name(which),
         client=sdk,
         model_options={

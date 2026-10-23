@@ -57,7 +57,7 @@ agent = Text2Cypher(client, AsyncOpenAI(), model="your-model")
 * Any `openai.AsyncOpenAI` works, which includes `AsyncAzureOpenAI` (the model is then the deployment name) and a client made for an OpenAI-compatible server with `base_url`. Your own configuration of it (key, headers, proxies, retries) is used as it is.
 * It has no model of its own, so `model=` is required, and giving `model=` with any other kind of client is an error.
 * The synchronous `openai.OpenAI` is refused, because the library is async.
-* The client is used with the defaults of `OpenAIClient`. To ask it differently, add `model_options` (below).
+* The client is asked with the defaults of the model options (below). To ask it differently, add `model_options`.
 * `model_options` is refused with any other kind of client, which has its own settings, so it is never silently ignored.
 
 ```python
@@ -69,15 +69,17 @@ agent = Text2Cypher(
 )
 ```
 
-{py:class}`~text2cypher.OpenAIClient` is the same thing as a class of its own. It uses the Chat Completions API:
+For an OpenAI-compatible server, give your own `AsyncOpenAI`:
 
 ```python
-from text2cypher import OpenAIClient
-
-llm = OpenAIClient("your-model", model_options={"timeout": 300})
+agent = Text2Cypher(
+    client,
+    AsyncOpenAI(base_url="http://localhost:8000/v1", api_key="not-needed"),
+    model="a-local-model",
+)
 ```
 
-`OpenAIClient.with_model("another-model", {...})` is a copy that asks another model with the same SDK client. A setting you leave out is kept, `None` takes one away, and a value replaces it, so a cheaper model that does not reason can have `{"reasoning_effort": None}` and a new `temperature`. `LLMSchemaFilter(model="small", model_options={...})` asks its model with them too. With no client of its own the filter's model starts with no `temperature` (the server's own: every model takes that, and a reasoning model refuses 0, which the filter would hide by keeping the whole schema, so the choice is less repeatable; `{"temperature": 0}` makes it so), no `reasoning_effort` and no `extra`, whatever the main client has, because those depend on the model; it keeps the main client's `timeout`, `max_retries`, `system_role` and `tools`, which belong to the server. With an `AsyncOpenAI` as its client the filter builds the client from `model_options`, starting the same way.
+The LLM schema filter asks a model of its own the same way: `LLMSchemaFilter(model="small", model_options={...})` asks the main client with another model, and `LLMSchemaFilter(AsyncOpenAI(), model="small", model_options={...})` asks another client. With no client of its own the filter's model starts with no `temperature` (the server's own: every model takes that, and a reasoning model refuses 0, which the filter would hide by keeping the whole schema, so the choice is less repeatable; `{"temperature": 0}` makes it so), no `reasoning_effort` and no `extra`, whatever the main client has, because those depend on the model; it keeps the main client's `timeout`, `max_retries`, `system_role` and `tools`, which belong to the server. With an `AsyncOpenAI` as its client the filter starts the same way. A model that does not reason can have `{"reasoning_effort": None}` and its own `temperature`.
 
 ### Model options
 
@@ -90,18 +92,8 @@ llm = OpenAIClient("your-model", model_options={"timeout": 300})
 * `system_role=False` puts the system text before the text of the first user turn, for a model that has no system role.
 * `timeout` (120 seconds by default) is how long a call waits for a reply before it is given up and retried. The OpenAI SDK waits 10 minutes, and a question can make a dozen calls, so a hung connection could hold a run for hours. Raise it for a model that thinks for longer; `None` leaves the timeout of the client you pass. It applies to your own `AsyncOpenAI` too.
 * `tools=False` says the model or server cannot be offered tools (some OpenAI-compatible servers cannot), so the library offers none.
-* `max_retries` is how many times the SDK retries a call that fails on a timeout, a connection error, a rate limit or a server error, with a pause between. `None` (the default) leaves the client's own setting, which is 2 for the one made here. When a call still fails, the run ends with an `LLMError` that keeps the attempts made so far (see [Errors](usage.md#errors)).
-* It reads `OPENAI_API_KEY` unless you pass your own `AsyncOpenAI` as `client`, for example for an OpenAI-compatible server:
-
-```python
-from openai import AsyncOpenAI
-from text2cypher import OpenAIClient
-
-llm = OpenAIClient(
-    "a-local-model",
-    client=AsyncOpenAI(base_url="http://localhost:8000/v1", api_key="not-needed"),
-)
-```
+* `max_retries` is how many times the SDK retries a call that fails on a timeout, a connection error, a rate limit or a server error, with a pause between. `None` (the default) leaves the setting of the client you pass, which is 2 for a default `AsyncOpenAI`. When a call still fails, the run ends with an `LLMError` that keeps the attempts made so far (see [Errors](usage.md#errors)).
+* The SDK reads `OPENAI_API_KEY` for `AsyncOpenAI()`, or you pass your own key, `base_url` and other configuration to it.
 
 ### Model Selection
 

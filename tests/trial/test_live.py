@@ -4,7 +4,7 @@ import pytest
 from support import chat_reply, openai_client
 
 from evals.live import REQUIRED, load_env, make_client, parse_env
-from text2cypher import OpenAIClient
+from text2cypher.llm._chat_completions import ChatCompletionsAdapter
 
 pytestmark = pytest.mark.anyio
 
@@ -98,9 +98,9 @@ async def test_the_expensive_model_is_asked_with_its_reasoning_effort_and_no_tem
 async def test_the_cheap_model_is_asked_with_temperature_zero_and_no_effort():
     sdk, requests = openai_client(REPLY)
 
-    await OpenAIClient("small", client=sdk, model_options={"temperature": 0}).complete(
-        "system", "question"
-    )
+    await ChatCompletionsAdapter(
+        "small", client=sdk, model_options={"temperature": 0}
+    ).complete("system", "question")
 
     assert requests[0]["temperature"] == 0
     assert "reasoning_effort" not in requests[0]

@@ -1,30 +1,23 @@
 # Migrating from 2.x to 3.0
 
-3.0 changes three things: how `OpenAIClient` is given its settings, the text of the prompts, and the settings of the LLM schema filter's model. If you do none of these things (you do not give `OpenAIClient` a setting, you do not read or compare a prompt, and you do not use `LLMSchemaFilter(model=...)`), nothing changes for you.
+3.0 changes three things: `OpenAIClient` is gone (the OpenAI SDK's own client takes its place), the text of the prompts, and the settings of the LLM schema filter's model. If you do none of these things (you do not use `OpenAIClient`, you do not read or compare a prompt, and you do not use `LLMSchemaFilter(model=...)`), nothing changes for you.
 
-## `OpenAIClient` takes `model_options`
+## `OpenAIClient` is gone: give the SDK's client and `model_options`
 
-The keywords `temperature=`, `system_role=`, `timeout=`, `max_retries=` and `tools=` are gone, and they are now keys of one `model_options` dictionary, with two more (`reasoning_effort` and `extra`):
+`OpenAIClient` is no longer part of the API. The OpenAI SDK's own client (`AsyncOpenAI`, `AsyncAzureOpenAI`, or one for a compatible server) does its job, with the model in `model=` and what were its keywords, `temperature=`, `system_role=`, `timeout=`, `max_retries=` and `tools=`, now keys of one `model_options` dictionary, with two more (`reasoning_effort` and `extra`):
 
-Before (2.x):
+| 2.x | 3.0 |
+|---|---|
+| `Text2Cypher(client, OpenAIClient("m"))` | `Text2Cypher(client, AsyncOpenAI(), model="m")` |
+| `OpenAIClient("m", client=sdk, temperature=None, timeout=300)` | `Text2Cypher(client, sdk, model="m", model_options={"temperature": None, "timeout": 300})` |
+| `LLMSchemaFilter(OpenAIClient("small", client=sdk))` | `LLMSchemaFilter(sdk, model="small")` |
+| `OpenAIClient("main").with_model("small")` as the filter's client | `LLMSchemaFilter(model="small")`, which asks the main client with that model |
+| `OpenAIClient("m", client=sdk)` used on its own, `await llm.complete(system, user)` | the SDK's own `sdk.chat.completions.create(...)`, or a client of your own with a `chat` method (`AsyncChatClient`) |
 
-```python
-OpenAIClient("model", client=sdk, temperature=None, timeout=300, tools=False)
-```
-
-After (3.0):
-
-```python
-OpenAIClient(
-    "model",
-    client=sdk,
-    model_options={"temperature": None, "timeout": 300, "tools": False},
-)
-```
-
-* The values and defaults are the same, so a call that sets one is a one-for-one rewrite. Passing an old keyword is a `TypeError`.
+* The values and defaults of the settings are the same. Passing an old keyword is a `TypeError`, and `from text2cypher import OpenAIClient` is an `ImportError`.
 * A key that is not a setting is a `ValueError` that names it, and a type checker flags it too.
-* The same dictionary now works elsewhere: `Text2Cypher(client, AsyncOpenAI(), model="m", model_options={...})`, `LLMSchemaFilter(model="small", model_options={...})`, and `OpenAIClient.with_model("other", {...})`. A model that reasons wants `{"temperature": None, "reasoning_effort": "minimal"}`.
+* `model_options` works for the main model and for the filter's model: `Text2Cypher(client, AsyncOpenAI(), model="m", model_options={...})` and `LLMSchemaFilter(model="small", model_options={...})`. A model that reasons wants `{"temperature": None, "reasoning_effort": "minimal"}`.
+* A client of your own (one with a `chat` or a `complete` method) is unchanged, and has its own settings: `model_options` is refused with it.
 
 ## The prompts are Markdown
 
@@ -86,7 +79,7 @@ A `Completion` also has `finish_reason`, which a custom client can set (`"stop"`
 
 ## OpenAI
 
-`OpenAIClient("model")` still works and keeps all its options. The simplest way to use OpenAI is now to pass the SDK's own client and the model:
+`OpenAIClient("model")` still works and keeps all its options (in 3.0 it is gone: see above). The simplest way to use OpenAI is now to pass the SDK's own client and the model:
 
 ```python
 from openai import AsyncOpenAI

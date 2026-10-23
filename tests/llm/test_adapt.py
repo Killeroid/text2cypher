@@ -5,8 +5,9 @@ import openai
 import pytest
 from support import chat_reply, openai_client
 
-from text2cypher import FakeLLM, OpenAIClient
+from text2cypher import FakeLLM
 from text2cypher.llm._adapt import as_client
+from text2cypher.llm._chat_completions import ChatCompletionsAdapter
 
 pytestmark = pytest.mark.anyio
 
@@ -17,7 +18,7 @@ async def test_an_async_openai_with_a_model_is_asked_that_model():
     sdk, requests = openai_client(REPLY)
 
     client = as_client(sdk, "a-model")
-    assert isinstance(client, OpenAIClient)
+    assert isinstance(client, ChatCompletionsAdapter)
     await client.complete("system", "question")
 
     assert requests[0]["model"] == "a-model"
@@ -29,7 +30,7 @@ async def test_a_client_made_for_a_compatible_server_works_the_same_way():
     sdk, requests = openai_client(REPLY)
 
     client = as_client(sdk, "local-model")
-    assert isinstance(client, OpenAIClient)
+    assert isinstance(client, ChatCompletionsAdapter)
     await client.complete("s", "u")
 
     assert requests[0]["model"] == "local-model"
@@ -50,7 +51,7 @@ async def test_an_azure_client_is_an_async_openai_and_the_model_is_the_deploymen
     )
 
     client = as_client(sdk, "my-deployment")
-    assert isinstance(client, OpenAIClient)
+    assert isinstance(client, ChatCompletionsAdapter)
     await client.complete("s", "u")
 
     assert requests[0]["model"] == "my-deployment"
@@ -71,7 +72,7 @@ def test_the_synchronous_client_is_refused_because_the_library_is_async():
 @pytest.mark.parametrize("kind", ["fake", "openai"])
 def test_a_model_with_a_client_that_is_not_an_async_openai_is_an_error(kind: str):
     sdk, _ = openai_client(REPLY)
-    llm = FakeLLM([]) if kind == "fake" else OpenAIClient("m", client=sdk)
+    llm = FakeLLM([]) if kind == "fake" else ChatCompletionsAdapter("m", client=sdk)
 
     with pytest.raises(ValueError, match=r"is for an openai\.AsyncOpenAI"):
         as_client(llm, "a-model")
@@ -85,7 +86,7 @@ def test_any_other_client_is_used_as_it_is():
 
 async def test_with_model_asks_another_model_with_the_same_settings():
     sdk, requests = openai_client(REPLY)
-    main = OpenAIClient(
+    main = ChatCompletionsAdapter(
         "big",
         client=sdk,
         model_options={"temperature": 0.5, "system_role": False},
@@ -103,7 +104,7 @@ async def test_with_model_asks_another_model_with_the_same_settings():
 
 async def test_reasoning_effort_and_extra_fields_are_sent_on_every_call():
     sdk, requests = openai_client(REPLY)
-    client = OpenAIClient(
+    client = ChatCompletionsAdapter(
         "m",
         client=sdk,
         model_options={
@@ -122,7 +123,7 @@ async def test_reasoning_effort_and_extra_fields_are_sent_on_every_call():
 async def test_without_them_the_request_has_neither():
     sdk, requests = openai_client(REPLY)
 
-    await OpenAIClient("m", client=sdk).complete("s", "u")
+    await ChatCompletionsAdapter("m", client=sdk).complete("s", "u")
 
     assert set(requests[0]) == {"model", "messages", "temperature"}
 
@@ -132,19 +133,21 @@ def test_extra_cannot_set_what_the_client_sets(name: str):
     sdk, _ = openai_client(REPLY)
 
     with pytest.raises(ValueError, match=name):
-        OpenAIClient("m", client=sdk, model_options={"extra": {name: 1}})
+        ChatCompletionsAdapter("m", client=sdk, model_options={"extra": {name: 1}})
 
 
 def test_a_setting_that_does_not_exist_is_refused_by_name():
     sdk, _ = openai_client(REPLY)
 
+    mistyped = {"reasoning_effot": "low"}
+
     with pytest.raises(ValueError, match="reasoning_effot"):
-        OpenAIClient("m", client=sdk, model_options={"reasoning_effot": "low"})  # ty: ignore[invalid-key, invalid-argument-type]
+        ChatCompletionsAdapter("m", client=sdk, model_options=mistyped)  # ty: ignore[invalid-argument-type]
 
 
 async def test_with_model_keeps_what_is_not_named_and_clears_with_none():
     sdk, requests = openai_client(REPLY)
-    main = OpenAIClient(
+    main = ChatCompletionsAdapter(
         "big",
         client=sdk,
         model_options={"reasoning_effort": "low", "extra": {"seed": 1}},
@@ -172,7 +175,7 @@ async def test_with_model_keeps_what_is_not_named_and_clears_with_none():
 async def test_with_model_can_change_the_timeout_and_the_tools_flag():
     timeouts: list[float | None] = []
     sdk, _ = openai_client(REPLY, timeouts=timeouts)
-    main = OpenAIClient("big", client=sdk)
+    main = ChatCompletionsAdapter("big", client=sdk)
 
     other = main.with_model("small", {"timeout": 7, "tools": False})
     await other.complete("s", "u")
@@ -185,14 +188,16 @@ def test_with_model_refuses_an_extra_that_sets_what_the_client_sets():
     sdk, _ = openai_client(REPLY)
 
     with pytest.raises(ValueError, match="model"):
-        OpenAIClient("big", client=sdk).with_model("small", {"extra": {"model": "x"}})
+        ChatCompletionsAdapter("big", client=sdk).with_model(
+            "small", {"extra": {"model": "x"}}
+        )
 
 
 async def test_model_options_on_an_async_openai_are_the_settings_of_the_client_made():
     sdk, requests = openai_client(REPLY)
 
     client = as_client(sdk, "m", {"temperature": None, "reasoning_effort": "minimal"})
-    assert isinstance(client, OpenAIClient)
+    assert isinstance(client, ChatCompletionsAdapter)
     await client.complete("s", "u")
 
     assert requests[0]["reasoning_effort"] == "minimal"
@@ -202,7 +207,7 @@ async def test_model_options_on_an_async_openai_are_the_settings_of_the_client_m
 @pytest.mark.parametrize("kind", ["fake", "openai"])
 def test_model_options_with_a_client_that_is_not_an_async_openai_are_refused(kind: str):
     sdk, _ = openai_client(REPLY)
-    llm = FakeLLM([]) if kind == "fake" else OpenAIClient("m", client=sdk)
+    llm = FakeLLM([]) if kind == "fake" else ChatCompletionsAdapter("m", client=sdk)
 
     with pytest.raises(
         ValueError, match=r"model_options is for an openai\.AsyncOpenAI"
@@ -212,15 +217,15 @@ def test_model_options_with_a_client_that_is_not_an_async_openai_are_refused(kin
 
 def test_the_settings_of_model_options_are_the_ones_of_the_defaults():
     # a setting added to the TypedDict and not to the defaults (or the other way) is caught
-    from text2cypher.llm._openai import _DEFAULTS, ModelOptions
+    from text2cypher.llm._options import DEFAULTS, ModelOptions
 
-    assert set(ModelOptions.__annotations__) == set(_DEFAULTS)
+    assert set(ModelOptions.__annotations__) == set(DEFAULTS)
 
 
 async def test_a_change_to_the_extra_given_afterwards_does_not_change_the_client():
     sdk, requests = openai_client(REPLY)
     extra = {"seed": 1}
-    client = OpenAIClient("m", client=sdk, model_options={"extra": extra})
+    client = ChatCompletionsAdapter("m", client=sdk, model_options={"extra": extra})
 
     extra["seed"] = 2
     await client.complete("s", "u")

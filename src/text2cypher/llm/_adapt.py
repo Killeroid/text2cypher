@@ -3,7 +3,8 @@
 from openai import AsyncOpenAI, OpenAI
 
 from text2cypher.llm._base import AsyncChatClient, AsyncLLMClient
-from text2cypher.llm._openai import ModelOptions, OpenAIClient
+from text2cypher.llm._chat_completions import ChatCompletionsAdapter
+from text2cypher.llm._options import ModelOptions
 
 type LLM = AsyncChatClient | AsyncLLMClient | AsyncOpenAI
 
@@ -16,7 +17,7 @@ def as_client(
     """``llm`` as a client the library can ask.
 
     An ``openai.AsyncOpenAI`` (also ``AsyncAzureOpenAI``, and one made for a compatible
-    server with ``base_url``) becomes an ``OpenAIClient`` for ``model``, with
+    server with ``base_url``) becomes a ``ChatCompletionsAdapter`` for ``model``, with
     ``model_options`` or else that class's defaults. Any other client is returned as it is.
 
     Raises:
@@ -29,7 +30,7 @@ def as_client(
             raise ValueError(
                 "An openai.AsyncOpenAI has no model of its own: pass model='...'"
             )
-        return OpenAIClient(model, client=llm, model_options=model_options)
+        return ChatCompletionsAdapter(model, client=llm, model_options=model_options)
     if isinstance(llm, OpenAI):
         raise TypeError(
             "text2cypher is async: pass an openai.AsyncOpenAI, not an openai.OpenAI"
@@ -41,7 +42,6 @@ def as_client(
     if model_options is not None:
         raise ValueError(
             "model_options is for an openai.AsyncOpenAI; any other client has its own "
-            "settings (for an OpenAIClient, pass them to it: "
-            "OpenAIClient('m', model_options={...}))"
+            "settings, which it is given when it is made"
         )
     return llm

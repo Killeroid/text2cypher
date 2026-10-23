@@ -1,9 +1,9 @@
-"""An LLM client for OpenAI's Chat Completions API (and compatible servers)."""
+"""The adapter that gives the library's chat protocol over the OpenAI SDK's Chat Completions API."""
 
 import copy
 import json
-from collections.abc import Mapping, Sequence
-from typing import Any, Literal, TypedDict, cast
+from collections.abc import Sequence
+from typing import Any, Literal
 
 from openai import NOT_GIVEN, AsyncOpenAI, omit
 from openai.types.chat import (
@@ -13,101 +13,14 @@ from openai.types.chat import (
 )
 
 from text2cypher.llm._base import Completion, Message, Tool, ToolCall, Usage
-
-# What the library sets on every request itself, so ``extra`` may not
-_RESERVED = frozenset(
-    {
-        "model",
-        "messages",
-        "temperature",
-        "tools",
-        "tool_choice",
-        "reasoning_effort",
-        "stream",
-    }
-)
+from text2cypher.llm._options import DEFAULTS, ModelOptions, checked_options
 
 
-class ModelOptions(TypedDict, total=False):
-    """The settings of how a model is asked, for ``OpenAIClient(model_options=...)``.
+class ChatCompletionsAdapter:
+    """Asks a model through the SDK's Chat Completions API: a system message and the turns of the conversation.
 
-    Every key is optional. Asking a new client, a key left out takes its default; for
-    ``OpenAIClient.with_model``, it keeps the value the client has.
-
-    Attributes:
-        temperature: The sampling temperature; ``None`` leaves it out, for models that only
-            accept their own (reasoning models). Default ``0``.
-        system_role: ``False`` puts the system text before the first user message's text,
-            for a model that has no system role. Default ``True``.
-        timeout: Seconds to wait for a reply before giving up on the call (it is then
-            retried, see ``max_retries``). The OpenAI SDK waits 10 minutes by default, and a
-            question can make a dozen calls, so a hung connection would hold a run for hours;
-            the default is 2 minutes. Raise it for a model that thinks for longer. It applies
-            to an ``AsyncOpenAI`` you pass too; ``None`` leaves that client's own timeout.
-        max_retries: How many times the SDK retries a call that fails on a timeout, a
-            connection error, a rate limit or a server error, with a pause between. ``None``
-            (the default) leaves the client's own setting (2 for one made here). When it
-            still fails, the run ends with an ``LLMError``.
-        tools: ``False`` says the model or server cannot be offered tools (some compatible
-            servers cannot), so the library does without them. Default ``True``.
-        reasoning_effort: How much a reasoning model thinks (``"minimal"``, ``"low"``,
-            ``"medium"``, ``"high"``, or what the server takes). ``None`` (the default)
-            leaves it out.
-        extra: Other request fields to send on every call, such as ``max_completion_tokens``,
-            ``seed`` or ``service_tier``; a name the SDK does not know is sent as it is.
-            ``model``, ``messages``, ``temperature``, ``tools``, ``tool_choice``,
-            ``reasoning_effort`` and ``stream`` are set by the client and are an error here.
-            A new ``extra`` replaces the old one as a whole.
-    """
-
-    temperature: float | None
-    system_role: bool
-    timeout: float | None
-    max_retries: int | None
-    tools: bool
-    reasoning_effort: str | None
-    extra: Mapping[str, Any] | None
-
-
-_DEFAULTS: ModelOptions = {
-    "temperature": 0,
-    "system_role": True,
-    "timeout": 120.0,
-    "max_retries": None,
-    "tools": True,
-    "reasoning_effort": None,
-    "extra": None,
-}
-
-
-def checked_options(options: Mapping[str, Any] | None) -> ModelOptions:
-    """``options`` as they are, after checking the names and what ``extra`` sets.
-
-    Raises:
-        ValueError: If a key is not a setting of ``ModelOptions``, or ``extra`` sets a field
-            the client sets itself.
-    """
-    unknown = (options or {}).keys() - _DEFAULTS.keys()
-    if unknown:
-        raise ValueError(
-            f"model_options has no {', '.join(sorted(unknown))}: "
-            f"the settings are {', '.join(_DEFAULTS)}"
-        )
-    taken = _RESERVED.intersection((options or {}).get("extra") or ())
-    if taken:
-        raise ValueError(
-            f"extra cannot set {', '.join(sorted(taken))}: the client sets them"
-        )
-    checked = dict(options or {})
-    if checked.get("extra") is not None:
-        checked["extra"] = dict(
-            checked["extra"]
-        )  # not the caller's own, who may change it
-    return cast("ModelOptions", checked)
-
-
-class OpenAIClient:
-    """Asks an OpenAI chat model with a system message and the turns of the conversation.
+    It is what an ``openai.AsyncOpenAI`` given to ``Text2Cypher`` or ``LLMSchemaFilter``
+    (with ``model=``) becomes; it is not part of the public API.
 
     Args:
         model: The model to ask. There is no default: the right one depends on the
@@ -127,7 +40,7 @@ class OpenAIClient:
     ) -> None:
         self._model = model
         self._sdk = client or AsyncOpenAI()
-        self._options: ModelOptions = {**_DEFAULTS, **checked_options(model_options)}
+        self._options: ModelOptions = {**DEFAULTS, **checked_options(model_options)}
         self._apply()
 
     def _apply(self) -> None:
@@ -142,7 +55,7 @@ class OpenAIClient:
 
     def with_model(
         self, model: str, model_options: ModelOptions | None = None
-    ) -> "OpenAIClient":
+    ) -> "ChatCompletionsAdapter":
         """A client that asks ``model`` instead, with the same SDK client and every setting
         but the ones in ``model_options``, for example a cheaper model for a part of the work.
 

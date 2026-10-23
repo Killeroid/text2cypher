@@ -4,7 +4,7 @@ import inspect
 import json
 import re
 from dataclasses import dataclass, field, replace
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from openai import AsyncOpenAI
 
@@ -15,11 +15,10 @@ from text2cypher.llm import (
     AsyncLLMClient,
     Message,
     ModelOptions,
-    OpenAIClient,
     Usage,
 )
 from text2cypher.llm._adapt import as_client
-from text2cypher.llm._openai import checked_options
+from text2cypher.llm._options import checked_options
 from text2cypher.schema import (
     GraphSchema,
     SchemaFilter,
@@ -27,6 +26,9 @@ from text2cypher.schema import (
 )
 from text2cypher.schema._model import quote_identifier
 from text2cypher.schema._render import as_markdown, data_dictionary_section
+
+if TYPE_CHECKING:
+    from text2cypher.llm._chat_completions import ChatCompletionsAdapter
 
 _SYSTEM = """\
 # Role
@@ -134,7 +136,7 @@ class LLMSchemaFilter:
             ``extra``, whatever the main client has, because they depend on the model. With
             ``llm=None`` it keeps the main client's connection settings (``timeout``,
             ``max_retries``, ``system_role`` and ``tools``); with an ``AsyncOpenAI`` as ``llm``,
-            any other setting left out takes the default of ``OpenAIClient``. It needs
+            any other setting left out takes the default of the adapter for an ``AsyncOpenAI``. It needs
             ``model``, and it is an error with a client of the filter's own that is not an
             ``AsyncOpenAI``.
         property_descriptions: With a data dictionary on the schema, whether the model is
@@ -184,7 +186,7 @@ class LLMSchemaFilter:
             )
         return replace(
             self,
-            llm=cast("OpenAIClient", llm).with_model(
+            llm=cast("ChatCompletionsAdapter", llm).with_model(
                 self.model, {**_MODEL_START, **(self.model_options or {})}
             ),
             model=None,

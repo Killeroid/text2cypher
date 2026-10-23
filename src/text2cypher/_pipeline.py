@@ -26,7 +26,7 @@ class Text2Cypher:
         client: A ``falkordb.asyncio`` client. It is bound to one event loop, so use
             one ``Text2Cypher`` per loop.
         llm: The model that writes and corrects the queries: an ``openai.AsyncOpenAI`` (with
-            ``model``), an ``OpenAIClient``, or a client of your own. A client with ``chat``
+            ``model``), or a client of your own. A client with ``chat``
             is given each correction as the turns of a conversation; one with only
             ``complete``, as one message.
         model: The model to ask, when ``llm`` is an ``openai.AsyncOpenAI``, which has none
@@ -34,7 +34,7 @@ class Text2Cypher:
             one is an error.
         model_options: How to ask ``model``, for an ``openai.AsyncOpenAI``: the
             ``temperature``, ``reasoning_effort``, ``timeout`` and other settings of
-            ``ModelOptions``; a setting left out takes the default of ``OpenAIClient``. Any
+            ``ModelOptions``; a setting left out takes the default. Any
             other kind of ``llm`` has its own settings, and ``model_options`` with one is an
             error.
         config: The limits of the correction loop, whether to execute, and how long a

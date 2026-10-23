@@ -28,7 +28,6 @@ PUBLIC = {
         "LLMSchemaFilter",
         "Message",
         "ModelOptions",
-        "OpenAIClient",
         "Records",
         "Result",
         "SchemaFilter",
@@ -51,7 +50,6 @@ PUBLIC = {
         "FakeLLM",
         "Message",
         "ModelOptions",
-        "OpenAIClient",
         "Tool",
         "ToolCall",
         "Usage",
@@ -86,7 +84,6 @@ def test_the_public_names_of_the_subpackages_are_the_same_objects_as_the_top_lev
         "FakeLLM",
         "Message",
         "ModelOptions",
-        "OpenAIClient",
         "Tool",
         "ToolCall",
         "Usage",
@@ -120,3 +117,10 @@ def test_every_module_outside_the_public_namespaces_is_internal():
 def test_the_version_is_a_string():
     assert isinstance(text2cypher.__version__, str)
     assert text2cypher.__version__
+
+
+def test_the_adapter_of_the_sdk_client_is_not_public_and_the_old_name_is_gone():
+    # The SDK's own client is given to Text2Cypher with model= and model_options=
+    for module in (text2cypher, llm):
+        assert not hasattr(module, "OpenAIClient")
+        assert not hasattr(module, "ChatCompletionsAdapter")

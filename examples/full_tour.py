@@ -225,7 +225,7 @@ def build_agent(
         client,
         llm,
         model=model,
-        # How the model is asked. These are the settings of OpenAIClient, and the defaults
+        # How the model is asked. These are the settings of ModelOptions, and the defaults
         # are a temperature of 0, a timeout of 120 seconds and the SDK's own retries. A
         # reasoning model wants {"temperature": None, "reasoning_effort": "low"} instead,
         # since it refuses a temperature.
