@@ -93,7 +93,7 @@ agent = Text2Cypher(client, llm, config=Config(attempts_w_filtered=2, total_atte
 
 ### Model Selection
 
-Choose LLM models based on your requirements. Different models provide different balances of speed and accuracy and cost. See [LLM clients](llm.md) for more details.
+Choose LLM models based on your requirements. Different models provide different balances of speed and accuracy and cost. See [LLM clients](llm.md) for more details, and for how to ask a reasoning model (`model_options`, [Model options](llm.md#model-options)).
 
 
 ### Schema filtering
@@ -112,6 +112,19 @@ agent = Text2Cypher(client, llm, schema_filter=LLMSchemaFilter())
 See [The schema and its filter](schema.md).
 
 
+
+### Describing your graph
+
+A [data dictionary](schema.md#describing-the-graph) tells the model what the labels, relationship types and properties mean, in your words. Everything in it is optional, and it costs nothing when you do not give one:
+
+```python
+from text2cypher import DataDictionary
+
+dictionary = DataDictionary(
+    {"nodes": {"Person": {"description": "An actor or a director."}}}
+)
+agent = Text2Cypher(client, llm, data_dictionary=dictionary)
+```
 
 ## Running the query
 

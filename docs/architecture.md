@@ -71,7 +71,7 @@ and the package never imports `evals`. Each type lives with its domain (there is
 src/text2cypher/
 ├── __init__.py          the public API (re-exports, __all__, __version__); no logic
 ├── py.typed
-├── _pipeline.py         Text2Cypher: gets the schema, runs the workflow (which validates and executes), clear_schema
+├── _pipeline.py         Text2Cypher: gets the schema, adds the data dictionary, runs the workflow (which validates and executes), clear_schema
 ├── _workflow.py         run_workflow: the loop and the escalation policy
 ├── _config.py           Config
 ├── _graph/              talking to FalkorDB (ADR-053)
@@ -86,13 +86,13 @@ src/text2cypher/
 ├── _errors.py           Text2CypherError, GraphNotFoundError (LLMError and DatabaseError are in _results/results.py, with the attempts they carry)
 ├── llm/                 public: AsyncChatClient, AsyncLLMClient, Completion, Message, Tool, ToolCall, Usage, OpenAIClient, ModelOptions, FakeLLM, Call
 │   ├── _base.py  _openai.py  _fake.py  _adapt.py (as_client: the SDK's own client)
-├── schema/              public: GraphSchema, Index, Path, SchemaFilter, filter_schema, restrict_schema, render_schema, schema_from_snapshot
-│   ├── _model.py  _from_snapshot.py  _filter.py  _stopwords.py  _render.py
+├── schema/              public: GraphSchema, DataDictionary, Index, Path, SchemaFilter, filter_schema, restrict_schema, render_schema, schema_from_snapshot
+│   ├── _model.py  _from_snapshot.py  _filter.py  _stopwords.py  _render.py (Section, schema_sections, as_markdown)  _dictionary.py (DataDictionary, Entry)
 ├── _validation/
 │   ├── validator.py     QueryValidator: the three cypher-guardrail async validators
 │   └── issues.py        Issue, Source, ValidationResult, drop_repeated_property_issues
 └── _generation/
-    ├── prompts.py       generator system prompt (rules built from lists, the checks, the skills section) and the question message
+    ├── prompts.py       generator system prompt as Markdown (rules built from lists, the checks, the skills section, the schema sections) and the question message
     ├── conversation.py  Round, the turns of a conversation (chat_messages) and the same as one message (folded_message)
     ├── problems.py      the issues of a query worded for the LLM, one handler per issue code; likely_typos
     ├── typos.py         fix_typos: replace a misspelled name in a query with the name it is a typo of
@@ -106,7 +106,9 @@ tests/                   mirrors src/: llm/ schema/ validation/ generation/ tria
                          quickstart), test_docs (the links and the index), test_public_api; support.py, conftest.py
 examples/                quickstart.py (embedded FalkorDB, scripted LLM, one correction); run by a test
 evals/                   the trial harness (not part of the package): dataset (types), datasets/ (movies, company,
-                         company_synonyms, skills), replay, judge, metrics, trial, recorded/
+                         company_synonyms, skills), replay, judge, metrics, trial, recorded/; and the format
+                         measurement (ADR-055): format_trial (the runner), formats (plain, Markdown, XML), live (the
+                         settings and clients from .env), dictionaries
 docs/                    the Sphinx site (conf.py and the guides) and this document
 ```
 
@@ -114,11 +116,12 @@ docs/                    the Sphinx site (conf.py and the guides) and this docum
 
 ### Pipeline (`_pipeline.py`)
 
-`Text2Cypher(client, llm, *, model=None, config=None, schema_filter=filter_schema, skills=None).run(question, graph)` (`llm` may be the SDK's `AsyncOpenAI`, with `model`; see LLM):
+`Text2Cypher(client, llm, *, model=None, model_options=None, config=None, schema_filter=filter_schema, skills=None, data_dictionary=None).run(question, graph)` (`llm` may be the SDK's `AsyncOpenAI`, with `model` and `model_options`; see LLM):
 
 1. Asks its `SchemaSource` for the graph's `GraphSchema` and the source the validators answer from: a `Snapshot`
    (`types=True`) captured on every call, or, with `Config.schema_refresh_seconds`, a kept one (see Schema), with the
-   example values (see below).
+   example values (see below). If it has a `data_dictionary`, it is put on that schema (`dataclasses.replace`), after the read, so
+   what is kept is the graph's and never the user's text.
 2. The source raises `GraphNotFoundError` (a public `ValueError`) before any LLM call if the snapshot has no labels and
    no relationship types: FalkorDB has no graph without data, so an empty snapshot means a missing graph or a typo,
    and nothing is kept for it.
@@ -242,12 +245,13 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   question that matches nothing keeps the whole schema, so a miss costs nothing; the lexical filter does not know
   that "people" means `Person`. A `SchemaFilter` is a plain synchronous callable `(schema, question) -> schema`, and `restrict_schema(schema, labels, types)` is what it ends with (public, so a filter of
   your own can too): the named entities, the paths that touch them, the entities on those paths, and their properties, indexes and examples.
-- **The LLM filter** (`LLMSchemaFilter(llm=None, *, min_entities=20, model=None)`, in `_generation/schema_filter.py` because it needs the LLM protocol and `schema` and `llm` are sibling layers). Choosing it replaces the
+- **The data dictionary** (`DataDictionary`, `schema/_dictionary.py`, ADR-054) is what the user says the labels, relationship types and properties mean. It is built from a nested dict in which everything is optional, checked when built (a non-string is a `TypeError`, an unknown key a `ValueError` that names it), with whitespace collapsed; an omitted description is `None` and a blank one `""`. It is not read from the graph, so it is not kept with the schema: `Text2Cypher` puts it on each run's schema, and `restrict_schema` keeps the entries of what it keeps (`DataDictionary.only`). `check(schema)` returns one message for each name the graph lacks and each blank description. `data_dictionary_section(schema, properties=True)` in `_render.py` makes the section: once the dictionary has text for what the graph has, every label, relationship type and property of the graph is listed (a bare name where there is no text, so that the undescribed does not look unimportant), as a nested list with no styling, under `Labels` and `Relationship types` (a label and a type can share a name); with no text for the graph it is `None` and there is no section and no rule. `render_schema` prints it as `Data dictionary:`, the prompts as `## Data dictionary`. The prompt rule about it is only there when the section is.
+- **The LLM filter** (`LLMSchemaFilter(llm=None, *, min_entities=20, model=None, model_options=None, property_descriptions=False)`, in `_generation/schema_filter.py` because it needs the LLM protocol and `schema` and `llm` are sibling layers). Choosing it replaces the
   lexical filter: it runs alone and is shown the whole schema, so there is no pre-run to cut what it sees. The prompt: a system message that asks for the labels and relationship types a query would use, only names in the
-  schema, the question as text and never instructions, and a reply of JSON in one fenced block; a user message with the labels and their property names (no types, examples or indexes), the paths and the question.
+  schema, the question as text and never instructions, and a reply of JSON in one fenced block; a user message with the labels and their property names (no types, examples or indexes), the paths, the data dictionary if there is one (every label and relationship type with its description, and the properties too with `property_descriptions=True`, plus a rule to choose by meaning, both only when something is shown), and the question.
   The reply is read from a fenced block or the first `{...}`, names are matched without case and unknown ones dropped, and `restrict_schema` does the rest. An unusable reply (no JSON, no known name, empty lists), a
   call that raises, or a schema below `min_entities` (labels plus the types on paths) keeps the whole schema, so it can only cost tokens, never a question; a failed call is not counted, because nothing says what it cost.
-  Cancellation passes through. With `llm=None` the `Text2Cypher` makes a copy (`bound`) that has the main client; `model=` asks the main client with another, cheaper model (`OpenAIClient.with_model`), or names the model of an SDK client the filter is given. It is a frozen dataclass, safe to share.
+  Cancellation passes through, so a filter whose model refuses a setting (a reasoning model and `temperature=0`) is a filter that does nothing, and says nothing: `filter_usage` is zero. With `llm=None` the `Text2Cypher` makes a copy (`bound`) that has the main client; `model=` asks the main client with another, cheaper model (`OpenAIClient.with_model`, with the filter's model starting with no temperature, no reasoning effort and no `extra`, ADR-056), or names the model of an SDK client the filter is given. It is a frozen dataclass, safe to share (`model_options` is left out of its hash).
 - **Async filters and what they cost.** `Text2Cypher(schema_filter=...)` takes a sync function, an async one, or an `AsyncSchemaFilter`; `apply_filter` calls it, awaits it if it is awaitable, and wraps a bare
   `GraphSchema` as `FilterResult(schema, Usage(0, 0))`. `FilterResult.usage` is zero when no model was asked and `None` when one was and did not report. It goes on `Result.filter_usage` (zero by default) and
   into `Result.usage`, and into the `usage` of `LLMError` and `DatabaseError`, since it was paid for before the first attempt. `NO_TOKENS = Usage(0, 0)` is the zero the library uses for "asked no model", as for a fixed
@@ -301,8 +305,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   stay; the first user turn after the change opens with a line saying that the schema now lists the whole graph (once,
   and only when a query was written with the filtered one: a decline on the first query has nothing to explain). A
   declined reply (an empty block) is never a turn: it is asked again with the same turns and the full schema.
-  A client with only `complete` gets the conversation as one user message: the question, the note if any, "Earlier
-  attempts, oldest first" with each query and its problems, and the instruction once at the end.
+  A client with only `complete` gets the conversation as one user message: the question, `# Earlier attempts, oldest first` with the note if any, then each query (`## Attempt n`) and its problems, and the instruction once at the end. A skill put in the system prompt (a client that cannot be offered tools, or one already read) has its headings one level down, so that it does not look like a part of the prompt.
 - **Check section**, after the rules and before the reply format: the LLM is asked to check the query before it answers (valid syntax; every label, relationship type and property in the schema as spelled; every
   relationship in the direction the schema shows; read-only; only what the question asks for) and not to write the checks in its reply. The validators run the same checks afterwards, but a mistake the LLM catches costs
   no correction. About 55 words in every system prompt. With `Config.use_parameters` it also checks
@@ -489,6 +492,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   filter was right on the first schema for 20 and 19 of 20 questions against 12 and 11 for the lexical filter (every question ended valid either way, since a miss is retried on the full schema); skills lifted Haiku from 10 to 12 of 15 and made
   no difference for Sonnet (15 of 15 both ways). The replies are in `evals/recorded/measurement/` and `tests/trial/test_measurement.py` pins the numbers. The defaults stay off. Limits: one run per cell,
   agents and not the API, validation-only judging for the company schema.
+- The measurement of the prompt format (ADR-055, `evals/format_trial.py`): bare calls to an OpenAI-compatible endpoint (the settings come from `.env` through `evals/live.py`, which makes `OpenAIClient`s with `model_options`), one per question with no correction, on the generator (movies, judged by rows, and `company_synonyms`, by validation, with the dictionary off and on) and on `LLMSchemaFilter` alone (no dictionary, descriptions of labels and relationship types, and of properties too), in three layouts (`evals/formats.py`: Markdown is the package's prompt, plain is rebuilt as it was, XML is a prototype) and on a cheap and an expensive model. Cells are saved when done and rerun only if they had an error row. `run --dry-run` runs the whole matrix with a stand-in model. It has not been run on a real model yet (the endpoint is on a private network), so the Markdown layout is adopted on convention and is to be reverted if the measurement says it does worse.
 
 ## Not built yet
 
@@ -496,6 +500,10 @@ Each item says what would bring it back.
 
 
 **Ideas**
+- Logging a failed filter call (it is swallowed on purpose, so a wrong model name or a refused setting looks like a filter that cuts nothing).
+- An example of the data dictionary in the prompt, and a dictionary per graph (`Text2Cypher(data_dictionary=)` is one dictionary for every graph the agent asks); measure first (ADR-054).
+- A hybrid layout: Markdown headings with tags around what comes from outside the library (the schema, the dictionary, the question), which would also stop a question from writing `# Rules` lines (ADR-055).
+- Checking the types of the values of `model_options` when it is built, not at the first request.
 - Telling the model, in a correction, that its last query was cut off (`finish_reason` is `length` on an attempt that has a query); today the query is validated and corrected like any other.
 - Reversing a wrong-direction path without the LLM: the validator gives the exact replacement. Wait for a sign that models get directions wrong often.
 - Feeding an empty result back to the LLM, opt-in: an empty result can be the right answer; a confidence like another project's would be a different design, and needs an answer-writing step.
@@ -515,5 +523,5 @@ Each item says what would bring it back.
 
 **Other**
 - Embedding similarity for the lexical filter (a heavy dependency, would be an extra) and property-name matching: when the filter's miss rate justifies them.
-- A row limit; converting rows to plain Python.
+- A row limit.
 - Metrics for the harness: success rate, self-healing rate (failures fixed by a correction), validation failures by type.

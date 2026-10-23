@@ -1,6 +1,8 @@
 # Migrating from 2.x to 3.0
 
-3.0 changes one thing: how `OpenAIClient` is given its settings. If you never gave it any (`OpenAIClient("model")`, or the SDK's own client with `model=`), nothing changes.
+3.0 changes three things: how `OpenAIClient` is given its settings, the text of the prompts, and the settings of the LLM schema filter's model. If you do none of these things (you do not give `OpenAIClient` a setting, you do not read or compare a prompt, and you do not use `LLMSchemaFilter(model=...)`), nothing changes for you.
+
+## `OpenAIClient` takes `model_options`
 
 The keywords `temperature=`, `system_role=`, `timeout=`, `max_retries=` and `tools=` are gone, and they are now keys of one `model_options` dictionary, with two more (`reasoning_effort` and `extra`):
 
@@ -23,8 +25,14 @@ OpenAIClient(
 * The values and defaults are the same, so a call that sets one is a one-for-one rewrite. Passing an old keyword is a `TypeError`.
 * A key that is not a setting is a `ValueError` that names it, and a type checker flags it too.
 * The same dictionary now works elsewhere: `Text2Cypher(client, AsyncOpenAI(), model="m", model_options={...})`, `LLMSchemaFilter(model="small", model_options={...})`, and `OpenAIClient.with_model("other", {...})`. A model that reasons wants `{"temperature": None, "reasoning_effort": "minimal"}`.
-* **The prompts are Markdown.** Each part has a heading (`# Rules`, `# Schema`, and `# Question` for the question) in place of `Rules:`, `Schema:` and `Question: ...`. A test that compares a prompt (`llm.calls[0].user == "Question: ..."`), or a client of your own that picks the question out of the user message, must follow. The wording of the rules is unchanged, and `render_schema` keeps its text.
-* `LLMSchemaFilter(model="small")` with no client of its own used to ask the model with every setting of the main client. It now asks with no temperature (the server's own, which every model accepts; a reasoning model refuses 0), no `reasoning_effort` and no `extra`, and keeps the main client's `timeout`, `max_retries`, `system_role` and `tools`. If you want a temperature for the filter's model, such as 0 for a choice that does not vary, say so in `model_options`.
+
+## The prompts are Markdown
+
+Each part of a prompt has a heading (`# Rules`, `# Schema`, and `# Question` for the question) in place of `Rules:`, `Schema:` and `Question: ...`. A test that compares a prompt (`llm.calls[0].user == "Question: ..."`), or a client of your own that picks the question out of the user message, must follow. The wording of the rules is unchanged, and `render_schema` keeps its text.
+
+## The filter's model
+
+`LLMSchemaFilter(model="small")` with no client of its own used to ask the model with every setting of the main client. It now asks with no temperature (the server's own, which every model accepts; a reasoning model refuses 0), no `reasoning_effort` and no `extra`, and keeps the main client's `timeout`, `max_retries`, `system_role` and `tools`. The same holds for an `AsyncOpenAI` given to the filter with `model=`. If you want a temperature for the filter's model, such as 0 for a choice that does not vary, say so in `model_options`.
 
 # Migrating from 1.x to 2.0
 
