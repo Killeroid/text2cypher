@@ -12,7 +12,7 @@ from redis.asyncio.connection import AbstractConnection
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
-FALKORDB_IMAGE = "falkordb/falkordb:v4.22.2"
+FALKORDB_IMAGE = "falkordb/falkordb:6.0.3"
 
 
 @pytest.fixture(scope="session")

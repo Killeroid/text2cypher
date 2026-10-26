@@ -60,7 +60,7 @@ RETURN size((c)-[:ROAD]->()) AS roads, outdegree(c) AS out, indegree(c) AS inn, 
 ## Notes
 
 - Not-equal is `<>`; `!=` is a syntax error.
-- The regular-expression operator `=~` is not supported: use `CONTAINS`, `STARTS WITH`, `ENDS WITH` or `string.matchRegEx`.
+- The regular-expression operator `=~` exists only in FalkorDB 6.0 and later; an older server rejects it. If it is rejected, use `CONTAINS`, `STARTS WITH`, `ENDS WITH` or `string.matchRegEx`.
 - `COUNT { ... }` and `EXISTS { ... }` subqueries are not supported. Count relationships with `size((c)-[:ROAD]->())`, `outdegree(c)` or `indegree(c)`.
 - There is no `datetime()`; use `localdatetime()`, `date()` or `timestamp()`.
 - Lower case is `toLower`, not `toLowerCase`. There is no `apoc` library.

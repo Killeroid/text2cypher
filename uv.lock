@@ -334,7 +334,7 @@ wheels = [
 
 [[package]]
 name = "cypher-guardrail"
-version = "1.5.1"
+version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "falkordb" },
@@ -342,9 +342,9 @@ dependencies = [
     { name = "redis" },
     { name = "regex" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/63/30/8cdb7c002e523aea552b588ff0e03d072c083c9e6d695b1e693bdff7692e/cypher_guardrail-1.5.1.tar.gz", hash = "sha256:e4b369ed8dcabe5164bfd58a260b6d3ff004f549fbca6cc7f42ec09bed677338", size = 118001, upload-time = "2026-10-21T17:49:26.514Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0a/f0/6a65a342c6b625263f48720a538fa1df9066eedc44c0185dfe51d8820743/cypher_guardrail-1.6.0.tar.gz", hash = "sha256:02b5858e24b47ef763866e9cecbd39629ade3fca56b5b0ebc94d841bf9a3dc3e", size = 122331, upload-time = "2026-10-26T13:56:12.613Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/80/e0/6bea122a3e893adf63f5ca2eb2eccf64bab25cb1a4224540af21f5da6de9/cypher_guardrail-1.5.1-py3-none-any.whl", hash = "sha256:6d1b607981790d6b97021fe3b17d41c2382bb80bc243621bf3628c016c077871", size = 132920, upload-time = "2026-10-21T17:49:25.584Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/22/bcaacd05b7a5a19b6864d56cd6deb632f25f0d40a2c8ab03942e26ea036a/cypher_guardrail-1.6.0-py3-none-any.whl", hash = "sha256:07e5af44a114e3bf8ddac258c6d64a41a5fab08d411733ce4788960c0c1486bf", size = 137339, upload-time = "2026-10-26T13:56:11.489Z" },
 ]
 
 [[package]]
@@ -1769,7 +1769,7 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cypher-guardrail", specifier = ">=1.5.1" },
+    { name = "cypher-guardrail", specifier = ">=1.6.0" },
     { name = "falkordb", extras = ["hiredis"], specifier = ">=1.8.0" },
     { name = "openai", specifier = ">=3.31.0" },
     { name = "redis", specifier = ">=8.1.0" },

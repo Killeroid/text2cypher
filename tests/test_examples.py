@@ -63,7 +63,7 @@ QUERIES = {
         "who acted in it."
     ): (
         "MATCH (p:Person)-[:ACTED_IN]->(m:Movie) WHERE m.year < 2000 "
-        "RETURN m, collect(p) AS cast"
+        "RETURN m, collect(p) AS cast ORDER BY m.title"
     ),
     "What is the average rating of each movie?": (
         "MATCH (:User)-[r:REVIEWED]->(m:Movie) RETURN m.title, avg(r.stars) AS rating "
@@ -200,7 +200,8 @@ async def test_the_full_tour_runs_every_section_with_a_scripted_model(
         "path Keanu Reeves -> Speed -> Sandra Bullock -> Gravity -> George Clooney "
         "-> Ocean's Eleven -> Brad Pitt"
     ) in out
-    assert "The Matrix | ['Keanu Reeves', 'Carrie-Anne Moss']" in out
+    assert "Apollo 13 | ['Tom Hanks', 'Kevin Bacon']" in out
+    assert "Se7en | ['Brad Pitt', 'Morgan Freeman']" in out
     assert "read skills: path-finding" in out
     assert "read skills: film-notes" in out
     # declined, query only, errors

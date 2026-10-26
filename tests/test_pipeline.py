@@ -547,7 +547,7 @@ async def test_a_query_that_fails_on_the_database_is_corrected_with_the_error(
 ):
     llm = FakeLLM(
         [
-            reply("MATCH (m:Movie) RETURN m.year % 0"),
+            reply("MATCH (m:Movie) RETURN m.year % (m.year - 1999)"),
             reply("MATCH (m:Movie) RETURN m.year % 100"),
         ]
     )
@@ -569,7 +569,7 @@ async def test_a_query_that_fails_on_the_database_is_corrected_with_the_error(
 async def test_without_execution_a_query_that_would_fail_on_the_database_is_valid(
     falkordb_client: FalkorDB, movies_graph: str
 ):
-    llm = FakeLLM([reply("MATCH (m:Movie) RETURN m.year % 0")])
+    llm = FakeLLM([reply("MATCH (m:Movie) RETURN m.year % (m.year - 1999)")])
 
     result = await Text2Cypher(falkordb_client, llm).run("Q", movies_graph)
 
@@ -580,7 +580,7 @@ async def test_without_execution_a_query_that_would_fail_on_the_database_is_vali
 async def test_a_query_that_keeps_failing_on_the_database_ends_as_failed(
     falkordb_client: FalkorDB, movies_graph: str
 ):
-    llm = FakeLLM([reply("MATCH (m:Movie) RETURN m.year % 0")] * 2)
+    llm = FakeLLM([reply("MATCH (m:Movie) RETURN m.year % (m.year - 1999)")] * 2)
 
     result = await Text2Cypher(
         falkordb_client,

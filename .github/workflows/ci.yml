@@ -46,7 +46,7 @@ jobs:
       FALKORDB_PORT: 6379
     services:
       falkordb:
-        image: falkordb/falkordb:v4.22.2
+        image: falkordb/falkordb:6.0.3
         ports:
           - 6379:6379
         options: >-

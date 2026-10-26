@@ -17,3 +17,5 @@ schema filter, the validator, the issue merging, the loop (corrections, the retr
 declining) and the execution. It does not pin the wording of the prompts (a reply is not compared with the prompt it
 answered); `tests/generation/test_prompts.py` and `tests/generation/test_prompt_rules.py` cover that. Record new replies (see
 `evals/README.md`) when the prompts change on purpose and the old replies no longer fit.
+
+`base/q07_1.txt` was edited on 2026-10-26: the agent's query had no `DISTINCT`, and FalkorDB 4.22 returned two rows for it where 6.0 returns the correct four (two movies by two directors), so the recorded outcome had come from a defect of the older server. The reply now has the `DISTINCT` that the question's reference query has.

@@ -450,7 +450,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 - uv for everything (`uv add`, `uv run`); ruff for lint and format (rules B, I, UP, SIM, C4, C90 with a
   complexity limit of 10, PTH, RET, RUF, ASYNC, PT, TID, TC, FURB); ty for types; import-linter for the layers above; pytest (importlib import mode, strict markers); coverage with branches. See
   `CLAUDE.md`.
-- Dependencies: `cypher-guardrail>=1.5.1`, `falkordb[hiredis]` (the `hiredis` extra is a C parser for the server's replies, which `redis` uses when it is there; wheels exist for Python 3.12 to 3.14 on the usual platforms), `openai`, `redis` (for `RedisError`), `snowballstemmer`.
+- Dependencies: `cypher-guardrail>=1.6.0`, `falkordb[hiredis]` (the `hiredis` extra is a C parser for the server's replies, which `redis` uses when it is there; wheels exist for Python 3.12 to 3.14 on the usual platforms), `openai`, `redis` (for `RedisError`), `snowballstemmer`.
   Dev: `falkordblite` (the quickstart and `evals/replay.py` only), `testcontainers`, `anyio`, `pytest`, `ruff`, `ty`, `coverage`, `import-linter`, `httpx2` (the OpenAI client tests run the real
   SDK over a mock transport). Docs group: `sphinx`, `myst-parser`, `furo`, `sphinx-copybutton`.
 - Documentation: Sphinx with MyST Markdown, Furo and autodoc (Google docstrings through napoleon), built by Read
@@ -462,7 +462,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 ## Test infrastructure
 
 - `tests/conftest.py` provides a session-scoped async client (`falkordb_client`, a regular
-  `falkordb.asyncio.FalkorDB`) on a real FalkorDB server: the `FALKORDB_IMAGE` Docker image (`falkordb/falkordb:v4.22.2`),
+  `falkordb.asyncio.FalkorDB`) on a real FalkorDB server: the `FALKORDB_IMAGE` Docker image (`falkordb/falkordb:6.0.3`),
   started by `testcontainers` on a free port and removed afterwards. With `FALKORDB_HOST` (and `FALKORDB_PORT`) set it
   uses that server instead, which is how CI runs (a service container of the same image). With neither Docker nor
   the variable, the fixture fails with a message that says so (ADR-058).

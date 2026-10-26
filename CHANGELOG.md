@@ -6,6 +6,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Changed
 
+- `cypher-guardrail>=1.6.0`, which checks queries on FalkorDB 6 as well as 4: a query that writes is reported as such again (on 6 the check it relied on stopped working). It also reports a division by a literal zero while validating, as an `ArithmeticError` issue, so that the query is corrected before it runs.
+- The `functions` skill says that the regular-expression operator `=~` exists only in FalkorDB 6.0 and later.
 - `falkordb` is installed with its `hiredis` extra (`falkordb[hiredis]>=1.8.0`), so that `redis` parses the server's replies with the C parser. Nothing changes in the API. `hiredis` ships wheels for Python 3.12 to 3.14 on Linux, macOS and Windows.
 
 ## 3.0.0 - 2026-10-23

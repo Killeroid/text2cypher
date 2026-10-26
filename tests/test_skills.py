@@ -91,7 +91,6 @@ async def test_every_example_runs_read_only_on_falkordb_and_returns_rows(
     "query",
     [
         "MATCH (c:City) WHERE c.pop != 10 RETURN c",
-        "MATCH (c:City) WHERE c.name =~ 'A.*' RETURN c",
         "MATCH (c:City {name: 'A'}) RETURN COUNT { (c)-[:ROAD]->() }",
         "MATCH (c:City {name: 'A'}) WHERE EXISTS { (c)-[:ROAD]->() } RETURN c",
         "RETURN datetime()",
@@ -107,6 +106,15 @@ async def test_what_the_functions_skill_says_is_missing_really_is(
     # if FalkorDB adds one, this fails and the skill needs its text changed
     with pytest.raises(Exception, match=r"."):
         await guide_graph.ro_query(query)
+
+
+async def test_the_regular_expression_operator_the_functions_skill_names_works_here(
+    guide_graph: AsyncGraph,
+):
+    # the skill says FalkorDB 6.0 and later has it; if the pin goes back to 4.x this fails
+    assert await rows(
+        guide_graph, "MATCH (c:City) WHERE c.name =~ 'A.*' RETURN count(c)"
+    ) == [[1]]
 
 
 def test_a_skill_file_needs_front_matter_a_name_and_a_description(tmp_path: Path):
