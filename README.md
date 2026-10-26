@@ -92,8 +92,8 @@ For contributors: [how it is built, and why](https://github.com/Killeroid/text2c
 ## Development
 
 ```sh
-uv sync                              # create the environment (Python >= 3.12 also installs FalkorDBLite for the tests)
-uv run pytest                        # the tests, on an embedded FalkorDB
+uv sync                              # create the environment (Python >= 3.12 also installs FalkorDBLite, which only the quickstart uses)
+uv run pytest                        # the tests, on a FalkorDB in Docker (or on the server in FALKORDB_HOST and FALKORDB_PORT)
 uv run pytest -m "not db"            # only the tests that need no database (under ten seconds)
 uv run ruff check . && uv run ruff format --check . && uv run ty check && uv run lint-imports
 uv run coverage run -m pytest && uv run coverage report

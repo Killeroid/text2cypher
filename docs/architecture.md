@@ -445,13 +445,13 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 
 ## Tooling and constraints
 
-- Python `>=3.12` (CI matrix 3.12, 3.13, 3.14): the embedded FalkorDB used by the tests needs 3.12, and nothing needs
+- Python `>=3.12` (CI matrix 3.12, 3.13, 3.14): FalkorDBLite (used by the quickstart and its test) needs 3.12, and nothing needs
   a newer feature. `py.typed` is shipped; the classifiers say production/stable, Python 3.12-3.14, typed.
 - uv for everything (`uv add`, `uv run`); ruff for lint and format (rules B, I, UP, SIM, C4, C90 with a
   complexity limit of 10, PTH, RET, RUF, ASYNC, PT, TID, TC, FURB); ty for types; import-linter for the layers above; pytest (importlib import mode, strict markers); coverage with branches. See
   `CLAUDE.md`.
 - Dependencies: `cypher-guardrail>=1.5.1`, `falkordb[hiredis]` (the `hiredis` extra is a C parser for the server's replies, which `redis` uses when it is there; wheels exist for Python 3.12 to 3.14 on the usual platforms), `openai`, `redis` (for `RedisError`), `snowballstemmer`.
-  Dev: `falkordblite`, `anyio`, `pytest`, `ruff`, `ty`, `coverage`, `import-linter`, `httpx2` (the OpenAI client tests run the real
+  Dev: `falkordblite` (the quickstart and `evals/replay.py` only), `testcontainers`, `anyio`, `pytest`, `ruff`, `ty`, `coverage`, `import-linter`, `httpx2` (the OpenAI client tests run the real
   SDK over a mock transport). Docs group: `sphinx`, `myst-parser`, `furo`, `sphinx-copybutton`.
 - Documentation: Sphinx with MyST Markdown, Furo and autodoc (Google docstrings through napoleon), built by Read
   the Docs (`.readthedocs.yaml`, `fail_on_warning`) and by a CI job with `-W`. The build is nitpicky: every type in
@@ -462,9 +462,10 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
 ## Test infrastructure
 
 - `tests/conftest.py` provides a session-scoped async client (`falkordb_client`, a regular
-  `falkordb.asyncio.FalkorDB`) attached to the unix socket of an embedded FalkorDBLite server. The sync embedded
-  client (`redislite.falkordb_client.FalkorDB`) owns the server so it is stopped cleanly with a save; FalkorDBLite's
-  own `AsyncFalkorDB` is not used because of an unawaited-`shutdown` bug (FalkorDBLite issue 61).
+  `falkordb.asyncio.FalkorDB`) on a real FalkorDB server: the `FALKORDB_IMAGE` Docker image (`falkordb/falkordb:v4.22.2`),
+  started by `testcontainers` on a free port and removed afterwards. With `FALKORDB_HOST` (and `FALKORDB_PORT`) set it
+  uses that server instead, which is how CI runs (a service container of the same image). With neither Docker nor
+  the variable, the fixture fails with a message that says so (ADR-058).
 - Per-test graphs are deleted afterwards (`movies_graph`, `film_graph`, an empty `new_graph`); the server is shared
   because starting and stopping it is slow. Every test that uses `falkordb_client` is marked `db` automatically,
   so `pytest -m "not db"` is the fast run. `tests/support.py` has the builders shared by the tests (a fenced

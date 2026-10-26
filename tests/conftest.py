@@ -1,14 +1,18 @@
+import os
 import uuid
 from collections import Counter
 from collections.abc import AsyncIterator
-from pathlib import Path
 from typing import Any
 
 import pytest
+from docker.errors import DockerException
 from falkordb.asyncio import FalkorDB
 from falkordb.asyncio.graph import AsyncGraph
 from redis.asyncio.connection import AbstractConnection
-from redislite.falkordb_client import FalkorDB as EmbeddedFalkorDB
+from testcontainers.core.container import DockerContainer
+from testcontainers.core.wait_strategies import LogMessageWaitStrategy
+
+FALKORDB_IMAGE = "falkordb/falkordb:v4.22.2"
 
 
 @pytest.fixture(scope="session")
@@ -17,28 +21,47 @@ def anyio_backend() -> str:
 
 
 @pytest.fixture(scope="session")
-async def falkordb_client(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> AsyncIterator[FalkorDB]:
-    """An async FalkorDB client on an embedded server (falkordblite), per test session.
+async def falkordb_client() -> AsyncIterator[FalkorDB]:
+    """An async FalkorDB client on a real server, per test session.
 
-    The sync embedded client owns the server so it is stopped cleanly with a
-    save; the regular ``falkordb.asyncio`` client attaches to its socket.
-    falkordblite's own ``AsyncFalkorDB`` calls ``shutdown()`` without awaiting
-    it, which warns and makes it SIGKILL the server after about 5 s
-    (falkordblite#61).
+    The server is the ``FALKORDB_IMAGE`` Docker image, started on a free port and
+    removed afterwards. Set ``FALKORDB_HOST`` (and ``FALKORDB_PORT``, default 6379)
+    to use a server that is already running, as CI does.
 
     Starting and stopping the server is slow, so it is shared and each test
     works in its own graph (see ``movies_graph``).
     """
-    db_file = Path(tmp_path_factory.mktemp("falkordb")) / "test.db"
-    embedded = EmbeddedFalkorDB(str(db_file))
-    client = FalkorDB(unix_socket_path=embedded.client.socket_file)
+    if host := os.environ.get("FALKORDB_HOST"):
+        client = FalkorDB(host=host, port=int(os.environ.get("FALKORDB_PORT", "6379")))
+        try:
+            yield client
+        finally:
+            await client.aclose()
+        return
     try:
-        yield client
+        container = (
+            DockerContainer(FALKORDB_IMAGE)
+            .with_exposed_ports(6379)
+            .waiting_for(LogMessageWaitStrategy("Ready to accept connections"))
+        )
+        container.start()
+    except DockerException as error:
+        pytest.fail(
+            "The tests need a FalkorDB server: start Docker, or set FALKORDB_HOST "
+            f"(and FALKORDB_PORT) to one that is running. {error}",
+            pytrace=False,
+        )
+    try:
+        client = FalkorDB(
+            host=container.get_container_host_ip(),
+            port=int(container.get_exposed_port(6379)),
+        )
+        try:
+            yield client
+        finally:
+            await client.aclose()
     finally:
-        await client.aclose()
-        embedded.close()
+        container.stop()
 
 
 @pytest.fixture
@@ -83,7 +106,7 @@ async def film_graph(new_graph: AsyncGraph) -> AsyncGraph:
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    """Mark every test that needs the embedded database, so it can be selected or skipped."""
+    """Mark every test that needs the FalkorDB server, so it can be selected or skipped."""
     for item in items:
         if "falkordb_client" in getattr(item, "fixturenames", ()):
             item.add_marker(pytest.mark.db)

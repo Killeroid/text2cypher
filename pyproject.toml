@@ -47,6 +47,7 @@ dev = [
     "import-linter>=2.15",
     "pytest>=9.1.1",
     "ruff>=0.17.0",
+    "testcontainers>=4.15.0",
     "ty>=0.0.87",
 ]
 docs = [
@@ -58,7 +59,7 @@ docs = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["db: needs the embedded FalkorDB server (skip with -m \"not db\")"]
+markers = ["db: needs a FalkorDB server (skip with -m \"not db\")"]
 # importlib mode (recommended for new projects) lets test files in different folders share a name
 addopts = ["--import-mode=importlib", "--strict-markers"]
 # so that the tests can import the trial harness in evals/ and the helpers in tests/support.py
