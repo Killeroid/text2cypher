@@ -153,7 +153,7 @@ async def test_the_notes_of_graph_algorithms_say_what_the_server_does(
     guide_graph: AsyncGraph,
 ):
     # PageRank takes two strings, not a map
-    with pytest.raises(Exception, match="requires 2 arguments"):
+    with pytest.raises(Exception, match=r"requires 2 arguments|expected at least 2"):
         await rows(
             guide_graph,
             "CALL algo.pageRank({nodeLabels: ['Person']}) YIELD node RETURN node",

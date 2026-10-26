@@ -117,7 +117,7 @@ async def indexed(falkordb_client: FalkorDB) -> AsyncIterator[AsyncGraph]:
     )
     await graph.query("CREATE INDEX FOR (p:Person) ON (p.name)")
     await graph.query("CREATE INDEX FOR (p:Person) ON (p.born)")
-    await graph.query("CALL db.idx.fulltext.createNodeIndex('Movie', 'title', 'plot')")
+    await graph.query("CREATE FULLTEXT INDEX FOR (m:Movie) ON (m.title, m.plot)")
     await graph.query(
         "CREATE VECTOR INDEX FOR (d:Doc) ON (d.embedding) "
         "OPTIONS {dimension: 4, similarityFunction: 'euclidean'}"
