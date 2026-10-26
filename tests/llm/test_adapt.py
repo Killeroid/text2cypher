@@ -3,11 +3,12 @@ import json
 import httpx2 as httpx
 import openai
 import pytest
-from support import chat_reply, openai_client
+from support import anthropic_client, chat_reply, message_reply, openai_client
 
 from text2cypher import FakeLLM
-from text2cypher.llm._adapt import as_client
+from text2cypher.llm._adapt import as_client, is_async_anthropic
 from text2cypher.llm._chat_completions import ChatCompletionsAdapter
+from text2cypher.llm._messages import MessagesAdapter
 
 pytestmark = pytest.mark.anyio
 
@@ -231,3 +232,39 @@ async def test_a_change_to_the_extra_given_afterwards_does_not_change_the_client
     await client.complete("s", "u")
 
     assert requests[0]["seed"] == 1
+
+
+async def test_an_async_anthropic_with_a_model_is_asked_that_model():
+    sdk, requests = anthropic_client(message_reply("x"))
+
+    client = as_client(sdk, "a-model")
+    assert isinstance(client, MessagesAdapter)
+    await client.complete("system", "question")
+
+    assert requests[0]["model"] == "a-model"
+    assert requests[0]["system"] == "system"
+
+
+def test_an_async_anthropic_without_a_model_is_refused():
+    sdk, _ = anthropic_client(message_reply("x"))
+
+    with pytest.raises(ValueError, match="no model of its own"):
+        as_client(sdk)
+
+
+async def test_model_options_on_an_async_anthropic_are_the_settings_of_the_client_made():
+    sdk, requests = anthropic_client(message_reply("x"))
+
+    client = as_client(sdk, "m", {"reasoning_effort": "low"})
+    await client.complete("s", "u")  # ty: ignore[unresolved-attribute]
+
+    assert requests[0]["output_config"] == {"effort": "low"}
+
+
+def test_only_an_async_anthropic_is_one():
+    anthropic_sdk, _ = anthropic_client(message_reply("x"))
+    openai_sdk, _ = openai_client(REPLY)
+
+    assert is_async_anthropic(anthropic_sdk)
+    assert not is_async_anthropic(openai_sdk)
+    assert not is_async_anthropic(FakeLLM([]))

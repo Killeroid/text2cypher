@@ -40,6 +40,7 @@ module-name = "text2cypher"
 
 [dependency-groups]
 dev = [
+    "anthropic>=2.0.0",
     "anyio>=4.15.1",
     "coverage>=7.16.2",
     "falkordblite; python_version >= '3.12'",
@@ -116,3 +117,8 @@ Documentation = "https://text2cypher.readthedocs.io/en/stable/"
 Changelog = "https://github.com/Killeroid/text2cypher/blob/main/CHANGELOG.md"
 Issues = "https://github.com/Killeroid/text2cypher/issues"
 Repository = "https://github.com/Killeroid/text2cypher"
+
+[project.optional-dependencies]
+anthropic = [
+    "anthropic>=2.0.0",
+]

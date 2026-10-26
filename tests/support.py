@@ -4,6 +4,7 @@ import json
 from typing import Any, cast
 
 import httpx2 as httpx
+from anthropic import AsyncAnthropic
 from cypher_guardrail import issues as cg
 from openai import AsyncOpenAI
 
@@ -170,3 +171,83 @@ def chat_reply_ending(
     if refusal is not None:
         reply["choices"][0]["message"]["refusal"] = refusal
     return reply
+
+
+def anthropic_client(
+    reply: dict,
+    requests: list[dict] | None = None,
+    *,
+    failures: int = 0,
+    timeouts: list[float | None] | None = None,
+    replies: list[dict] | None = None,
+    **options: Any,
+) -> tuple[AsyncAnthropic, list[dict]]:
+    """A real ``AsyncAnthropic`` whose HTTP layer answers with ``reply``, after ``failures`` 500s.
+
+    Like ``openai_client``: the read timeout each request was sent with is added to
+    ``timeouts``, and with ``replies`` the requests are answered with them in turn.
+    """
+    seen: list[dict] = [] if requests is None else requests
+    failed = 0
+    queue = iter(replies or [])
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        nonlocal failed
+        seen.append(json.loads(request.content))
+        if timeouts is not None:
+            timeouts.append(request.extensions["timeout"]["read"])
+        if failed < failures:
+            failed += 1
+            return httpx.Response(
+                500,
+                json={
+                    "type": "error",
+                    "error": {"type": "api_error", "message": "busy"},
+                },
+            )
+        return httpx.Response(200, json=next(queue, reply))
+
+    client = AsyncAnthropic(
+        api_key="test",
+        base_url="http://test",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(answer)),
+        **options,
+    )
+    return client, seen
+
+
+def message_reply(
+    content: list[dict] | str,
+    usage: dict | None = None,
+    stop_reason: str = "end_turn",
+) -> dict:
+    """A Messages API reply: text, or the content blocks, and why it ended."""
+    return {
+        "id": "msg_1",
+        "type": "message",
+        "role": "assistant",
+        "model": "test-model",
+        "content": [{"type": "text", "text": content}]
+        if isinstance(content, str)
+        else content,
+        "stop_reason": stop_reason,
+        "stop_sequence": None,
+        "usage": usage or {"input_tokens": 1, "output_tokens": 1},
+    }
+
+
+def tool_use_reply(
+    calls: list[tuple[str, str, dict]],
+    usage: dict | None = None,
+    *,
+    thinking: str | None = None,
+) -> dict:
+    """A reply in which the model asks for tools: ``(id, name, input)`` each, after thinking."""
+    blocks: list[dict] = []
+    if thinking is not None:
+        blocks.append({"type": "thinking", "thinking": "", "signature": thinking})
+    blocks.extend(
+        {"type": "tool_use", "id": id_, "name": name, "input": arguments}
+        for id_, name, arguments in calls
+    )
+    return message_reply(blocks, usage, "tool_use")

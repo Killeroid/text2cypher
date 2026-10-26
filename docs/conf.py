@@ -42,6 +42,8 @@ intersphinx_mapping = {"python": ("https://docs.python.org/3", None)}
 nitpicky = True
 nitpick_ignore_regex = [
     (r"py:class", r"openai\..*"),
+    (r"py:class", r"anthropic\..*"),
+    (r"py:class", r"Async(OpenAI|Anthropic)"),
     (r"py:class", r"falkordb\..*"),
     (r"py:class", r"cypher_guardrail\..*"),
 ]

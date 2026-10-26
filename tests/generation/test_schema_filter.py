@@ -2,7 +2,7 @@ import asyncio
 from dataclasses import replace
 
 import pytest
-from support import chat_reply, openai_client
+from support import anthropic_client, chat_reply, message_reply, openai_client
 
 from text2cypher import (
     Completion,
@@ -501,3 +501,26 @@ async def test_a_client_of_the_filters_own_keeps_its_settings():
     await LLMSchemaFilter(own, min_entities=0)(SCHEMA, "q")
 
     assert requests[0]["temperature"] == 0
+
+
+async def test_an_async_anthropic_and_a_model_are_the_filters_client():
+    import json
+
+    body = json.dumps({"labels": ["Genre"], "relationship_types": []})
+    usage = {"input_tokens": 5, "output_tokens": 2}
+    sdk, requests = anthropic_client(message_reply(f"```json\n{body}\n```", usage))
+
+    result = await LLMSchemaFilter(sdk, model="small", min_entities=0)(SCHEMA, "q")
+
+    assert [r["model"] for r in requests] == ["small"]
+    assert set(result.schema.node_properties) == {"Genre", "Movie"}
+    assert result.usage == Usage(5, 2)
+    # the model starts with no settings of the main client's
+    assert "output_config" not in requests[0]
+
+
+def test_an_async_anthropic_as_the_filters_client_needs_a_model():
+    sdk, _ = anthropic_client(message_reply("x"))
+
+    with pytest.raises(ValueError, match="no model of its own"):
+        LLMSchemaFilter(sdk)

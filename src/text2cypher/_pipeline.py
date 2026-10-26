@@ -2,9 +2,9 @@
 
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
+from typing import TYPE_CHECKING
 
 from falkordb.asyncio import FalkorDB
-from openai import AsyncOpenAI
 
 from text2cypher._config import Config
 from text2cypher._generation import AsyncSchemaFilter, LLMSchemaFilter
@@ -18,6 +18,10 @@ from text2cypher.llm._adapt import as_client
 from text2cypher.llm._base import supports_tools
 from text2cypher.schema import DataDictionary, SchemaFilter, filter_schema
 
+if TYPE_CHECKING:
+    from anthropic import AsyncAnthropic
+    from openai import AsyncOpenAI
+
 
 class Text2Cypher:
     """Turns a question into a query that passes validation against a FalkorDB graph.
@@ -25,15 +29,16 @@ class Text2Cypher:
     Args:
         client: A ``falkordb.asyncio`` client. It is bound to one event loop, so use
             one ``Text2Cypher`` per loop.
-        llm: The model that writes and corrects the queries: an ``openai.AsyncOpenAI`` (with
-            ``model``), or a client of your own. A client with ``chat``
+        llm: The model that writes and corrects the queries: an ``openai.AsyncOpenAI`` or an
+            ``anthropic.AsyncAnthropic`` (with ``model``), or a client of your own. A client with ``chat``
             is given each correction as the turns of a conversation; one with only
             ``complete``, as one message.
-        model: The model to ask, when ``llm`` is an ``openai.AsyncOpenAI``, which has none
-            of its own. Any other kind of ``llm`` chooses its own model, and ``model`` with
-            one is an error.
-        model_options: How to ask ``model``, for an ``openai.AsyncOpenAI``: the
-            ``temperature``, ``reasoning_effort``, ``timeout`` and other settings of
+        model: The model to ask, when ``llm`` is an ``openai.AsyncOpenAI`` or an
+            ``anthropic.AsyncAnthropic``, which have none of their own. Any other kind of
+            ``llm`` chooses its own model, and ``model`` with one is an error.
+        model_options: How to ask ``model``, for an ``openai.AsyncOpenAI`` or an
+            ``anthropic.AsyncAnthropic``: the ``temperature`` (not for Anthropic, whose models
+            take none), ``reasoning_effort``, ``timeout`` and other settings of
             ``ModelOptions``; a setting left out takes the default. Any
             other kind of ``llm`` has its own settings, and ``model_options`` with one is an
             error.
@@ -64,7 +69,7 @@ class Text2Cypher:
     def __init__(
         self,
         client: FalkorDB,
-        llm: AsyncChatClient | AsyncLLMClient | AsyncOpenAI,
+        llm: "AsyncChatClient | AsyncLLMClient | AsyncOpenAI | AsyncAnthropic",
         *,
         model: str | None = None,
         model_options: ModelOptions | None = None,

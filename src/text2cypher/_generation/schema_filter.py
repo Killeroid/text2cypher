@@ -17,7 +17,7 @@ from text2cypher.llm import (
     ModelOptions,
     Usage,
 )
-from text2cypher.llm._adapt import as_client
+from text2cypher.llm._adapt import as_client, is_async_anthropic
 from text2cypher.llm._options import checked_options
 from text2cypher.schema import (
     GraphSchema,
@@ -28,7 +28,10 @@ from text2cypher.schema._model import quote_identifier
 from text2cypher.schema._render import as_markdown, data_dictionary_section
 
 if TYPE_CHECKING:
+    from anthropic import AsyncAnthropic
+
     from text2cypher.llm._chat_completions import ChatCompletionsAdapter
+    from text2cypher.llm._messages import MessagesAdapter
 
 _SYSTEM = """\
 # Role
@@ -122,30 +125,30 @@ class LLMSchemaFilter:
 
     Attributes:
         llm: The client to ask, perhaps a cheaper one than the main model. It may be an
-            ``openai.AsyncOpenAI`` if ``model`` says which model. ``None`` takes the client
+            ``openai.AsyncOpenAI`` or ``anthropic.AsyncAnthropic`` if ``model`` says which model. ``None`` takes the client
             of the ``Text2Cypher`` it is given to.
         min_entities: Labels plus relationship types below which no model is asked; ``0``
             always asks.
-        model: With an ``AsyncOpenAI`` as ``llm``, the model to ask. With ``llm=None``, a
-            model to ask on the main client instead of the main model: the same SDK client
-            and settings, for example a cheaper model (it needs an OpenAI client as the main
-            one).
+        model: With an ``AsyncOpenAI`` or ``AsyncAnthropic`` as ``llm``, the model to ask. With
+            ``llm=None``, a model to ask on the main client instead of the main model: the same
+            SDK client and settings, for example a cheaper model (it needs a client made from an
+            OpenAI or Anthropic SDK client as the main one).
         model_options: How to ask ``model``; see ``ModelOptions``. The model starts with no
             ``temperature`` (the server's own, which every model accepts, so the choice is not
             repeatable: ``{"temperature": 0}`` makes it so), no ``reasoning_effort`` and no
             ``extra``, whatever the main client has, because they depend on the model. With
             ``llm=None`` it keeps the main client's connection settings (``timeout``,
-            ``max_retries``, ``system_role`` and ``tools``); with an ``AsyncOpenAI`` as ``llm``,
-            any other setting left out takes the default of the adapter for an ``AsyncOpenAI``. It needs
-            ``model``, and it is an error with a client of the filter's own that is not an
-            ``AsyncOpenAI``.
+            ``max_retries``, ``system_role`` and ``tools``); with an ``AsyncOpenAI`` or
+            ``AsyncAnthropic`` as ``llm``, any other setting left out takes the default of its
+            adapter. It needs ``model``, and it is an error with a client of the filter's own
+            that is neither.
         property_descriptions: With a data dictionary on the schema, whether the model is
             shown what the properties mean as well as the labels and relationship types
             (always shown). ``False`` keeps the prompt short; ``True`` helps a question that
             names a thing only by what a property holds.
     """
 
-    llm: AsyncChatClient | AsyncLLMClient | AsyncOpenAI | None = None
+    llm: "AsyncChatClient | AsyncLLMClient | AsyncOpenAI | AsyncAnthropic | None" = None
     min_entities: int = field(default=20, kw_only=True)
     model: str | None = field(default=None, kw_only=True)
     model_options: ModelOptions | None = field(
@@ -162,7 +165,7 @@ class LLMSchemaFilter:
             checked_options(self.model_options)
         if self.llm is not None:
             options = self.model_options
-            if isinstance(self.llm, AsyncOpenAI):
+            if isinstance(self.llm, AsyncOpenAI) or is_async_anthropic(self.llm):
                 options = cast("ModelOptions", {**_MODEL_START, **(options or {})})
             object.__setattr__(self, "llm", as_client(self.llm, self.model, options))
 
@@ -182,11 +185,12 @@ class LLMSchemaFilter:
         if not hasattr(llm, "with_model"):
             raise ValueError(
                 "LLMSchemaFilter(model=...) asks the main client with another model, "
-                "which needs an OpenAI client as the main one: give the filter its own llm"
+                "which needs a client made from an OpenAI or Anthropic SDK client as the main "
+                "one: give the filter its own llm"
             )
         return replace(
             self,
-            llm=cast("ChatCompletionsAdapter", llm).with_model(
+            llm=cast("ChatCompletionsAdapter | MessagesAdapter", llm).with_model(
                 self.model, {**_MODEL_START, **(self.model_options or {})}
             ),
             model=None,

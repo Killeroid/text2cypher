@@ -4,7 +4,7 @@ import pytest
 from falkordb.asyncio import FalkorDB
 from falkordb.asyncio.graph import AsyncGraph
 from redis.exceptions import ConnectionError as RedisConnectionError
-from support import chat_reply, openai_client, reply
+from support import anthropic_client, chat_reply, message_reply, openai_client, reply
 
 from text2cypher import (
     Completion,
@@ -985,7 +985,9 @@ async def test_a_filter_with_a_model_asks_the_main_sdk_client_with_that_model(
 async def test_a_filter_with_a_model_needs_a_main_client_that_can_ask_another_model(
     falkordb_client: FalkorDB,
 ):
-    with pytest.raises(ValueError, match="needs an OpenAI client"):
+    with pytest.raises(
+        ValueError, match="needs a client made from an OpenAI or Anthropic SDK client"
+    ):
         Text2Cypher(
             falkordb_client,
             FakeLLM([]),
@@ -1132,3 +1134,58 @@ def test_skills_too_long_for_every_prompt_are_refused_only_for_a_client_without_
             config=on,
             skills=[big],
         )
+
+
+async def test_an_async_anthropic_and_a_model_work_without_wrapping_it_first(
+    falkordb_client: FalkorDB, movies_graph: str
+):
+    sdk, requests = anthropic_client(
+        message_reply("```cypher\nMATCH (p:Person) RETURN p.name\n```")
+    )
+
+    result = await Text2Cypher(falkordb_client, sdk, model="a-claude").run(
+        "Who?", movies_graph
+    )
+
+    assert result.status == "valid"
+    assert result.query == "MATCH (p:Person) RETURN p.name"
+    assert requests[0]["model"] == "a-claude"
+    assert requests[0]["messages"] == [
+        {"role": "user", "content": requests[0]["messages"][0]["content"]}
+    ]
+    assert {"temperature", "top_p", "top_k"}.isdisjoint(requests[0])
+
+
+async def test_a_temperature_for_an_async_anthropic_is_refused_when_the_agent_is_made(
+    falkordb_client: FalkorDB,
+):
+    sdk, _ = anthropic_client(message_reply("x"))
+
+    with pytest.raises(ValueError, match="temperature cannot be set"):
+        Text2Cypher(falkordb_client, sdk, model="m", model_options={"temperature": 0})
+
+
+async def test_a_filter_with_a_model_asks_the_main_anthropic_client_with_that_model(
+    falkordb_client: FalkorDB, film_graph: AsyncGraph
+):
+    import json
+
+    chosen = (
+        "```json\n"
+        + json.dumps({"labels": ["Genre"], "relationship_types": []})
+        + "\n```"
+    )
+    sdk, requests = anthropic_client(
+        message_reply("```cypher\nMATCH (g:Genre) RETURN g.name\n```"),
+        replies=[message_reply(chosen)],
+    )
+
+    result = await Text2Cypher(
+        falkordb_client,
+        sdk,
+        model="big",
+        schema_filter=LLMSchemaFilter(model="small", min_entities=0),
+    ).run("Which genres are there?", film_graph.name)
+
+    assert [r["model"] for r in requests] == ["small", "big"]
+    assert result.status == "valid"
