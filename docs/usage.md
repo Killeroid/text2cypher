@@ -8,7 +8,7 @@ Python 3.12 or later.
 uv add text2cypher        # or: pip install text2cypher
 ```
 
-You need a FalkorDB graph that has data, reachable with the async client (`falkordb.asyncio`), and a model. The included client uses OpenAI's API and reads `OPENAI_API_KEY`; see [LLM clients](llm.md) for other models.
+You need a FalkorDB graph that has data, reachable with the async client (`falkordb.asyncio`), and a model. The included client uses OpenAI's API and reads `OPENAI_API_KEY`; see [LLM clients](llm.md) for other models, including [Claude](llm.md#claude-anthropic) (`text2cypher[anthropic]`).
 
 ## Asking a question
 

@@ -85,7 +85,7 @@ src/text2cypher/
 ├── _skills/             Skill, skills(), load, catalog, check_inline: guides to parts of FalkorDB's Cypher, one folder each (SKILL.md)
 ├── _errors.py           Text2CypherError, GraphNotFoundError (LLMError and DatabaseError are in _results/results.py, with the attempts they carry)
 ├── llm/                 public: AsyncChatClient, AsyncLLMClient, Completion, Message, Tool, ToolCall, Usage, ModelOptions, FakeLLM, Call
-│   ├── _base.py  _options.py (ModelOptions, its defaults and checks)  _chat_completions.py (ChatCompletionsAdapter, private)  _fake.py  _adapt.py (as_client: the SDK's own client)
+│   ├── _base.py  _options.py (ModelOptions, its defaults and checks)  _chat_completions.py (ChatCompletionsAdapter, private)  _messages.py (MessagesAdapter, private)  _fake.py  _adapt.py (as_client: the SDK's own client)
 ├── schema/              public: GraphSchema, DataDictionary, Index, Path, SchemaFilter, filter_schema, restrict_schema, render_schema, schema_from_snapshot
 │   ├── _model.py  _from_snapshot.py  _filter.py  _stopwords.py  _render.py (Section, schema_sections, as_markdown)  _dictionary.py (DataDictionary, Entry)
 ├── _validation/
@@ -285,6 +285,7 @@ an `Issue` is left out of its hash); a `Result` is hashable unless it holds `rec
   the client sets 2 minutes through `with_options` (a copy that shares the connection pool, so it also applies to a client you pass; `None` leaves that client's own). Retries are the
   SDK's (2 by default; the option changes them); a call that still fails ends the run with an `LLMError`. `FakeLLM` replays
   scripted replies and records its calls, for tests.
+- `MessagesAdapter(model, *, client=None, model_options=None)` (`llm/_messages.py`, private; ADR-059) is the same for an `anthropic.AsyncAnthropic` (Messages API), reached through `as_client` like the OpenAI one. `anthropic` is an optional extra (`text2cypher[anthropic]`), imported only by this module, which `as_client` imports when `llm/_adapt.py`'s `is_async_anthropic` says the client is one (it looks in `sys.modules`, so an install without `anthropic` never imports it). The system prompt is its own field; `max_tokens` is required (16000, from `extra["max_tokens"]`); `reasoning_effort` is `output_config.effort`; no sampling setting is ever sent and a `temperature` is a `ValueError` (the current models take only their default, and none at all on API version 2026-10-21). Tool answers become the `tool_result` blocks of one user message. The thinking blocks of a reply that asked for tools are required back unchanged, so the adapter keeps that reply's content blocks (the SDK's own objects, by the id of its first tool call, the last 256) and sends them in place of the rebuilt turn; a reply with no tool call is sent back as its text, which the API allows. It is written from the documentation and tested on a mock transport: `tests/trial/test_live_anthropic.py` is the live check (skipped without a key).
 
 ### Generation (`_generation/`)
 
@@ -510,7 +511,7 @@ Each item says what would bring it back.
 - A cap on the number of sampled properties of a very wide schema, and sampling only indexed or low-cardinality ones (ADR-034).
 - More skills, rewritten after running their claims on the server (skills of the user's own are built: ADR-050).
 - Query optimization from cypher-guardrail's `Advisor` (a limit, a bound on a path, a label, an index): looked at and dropped (ADR-051), because every suggestion that rewrites a query changes what it returns. Index advice for the owner of the graph, as a report over many runs, would bring it back.
-- Adapters for other LLM apps (Anthropic, LangChain) and a `ResponsesAdapter`: the tool shapes map one to one (ADR-042).
+- Adapters for other LLM apps (LangChain; Anthropic is built, ADR-059) and a `ResponsesAdapter`: the tool shapes map one to one (ADR-042).
 - Whether structured issues can inform escalation: an unknown label that exists nowhere in the graph will not be fixed by the full schema. Untested.
 - A sync facade, if demand appears (see Async only). `run_many(questions, concurrency=N)` for dataset evaluation.
 

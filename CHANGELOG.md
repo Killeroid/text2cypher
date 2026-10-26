@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## Unreleased
 
+### Added
+
+- Claude through the Anthropic SDK: `Text2Cypher(client, AsyncAnthropic(), model="claude-sonnet-5-5")`, and the same for `LLMSchemaFilter`, with `model_options` (`reasoning_effort` is the request's effort; `max_tokens` is in `extra`, 16000 by default). Install it with `text2cypher[anthropic]`. The models take no `temperature`, so none is sent and setting one is a `ValueError`. The thinking blocks of a reply that asks for tools are kept and sent back with the answers, as the API requires.
+
 ## 3.0.1 - 2026-10-26
 
 Support for FalkorDB 6, and a C parser for the database's replies. Nothing changes in the API.

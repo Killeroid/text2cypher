@@ -86,7 +86,7 @@ The LLM schema filter asks a model of its own the same way: `LLMSchemaFilter(mod
 `model_options` is a {py:class}`~text2cypher.ModelOptions` dictionary. Every key is optional, and a key that is not one of these is an error that names it (a type checker shows it too).
 
 * There is no default model: the right one depends on your account and on how large your schema is.
-* `temperature` is `0` by default; `None` leaves it out, for models that only accept their own (reasoning models).
+* `temperature` is `0` by default; `None` leaves it out, for models that only accept their own (reasoning models). For Claude it cannot be set (see [Claude](#claude-anthropic)).
 * `reasoning_effort` (`"minimal"`, `"low"`, `"medium"`, `"high"`, or what the server takes) is how much a reasoning model thinks; `None` (the default) leaves it out, so a request is the same as without it.
 * `extra` is a mapping of other request fields sent on every call, such as `max_completion_tokens`, `seed` or `service_tier`; a name the SDK does not know is sent as it is. `model`, `messages`, `temperature`, `tools`, `tool_choice`, `reasoning_effort` and `stream` are set by the client, so `extra` naming one is a `ValueError`. A new `extra` replaces the old one as a whole.
 * `system_role=False` puts the system text before the text of the first user turn, for a model that has no system role.
@@ -105,6 +105,30 @@ Choose llm models based on your requirements. Different models provide different
 | gpt-4o | Medium | Better | Medium | Production, complex queries |
 | gpt-4 | Slow | Best | High | Critical queries, complex schemas |
 
+
+## Claude (Anthropic)
+
+Install the extra, then pass the Anthropic SDK's own client and say which model, as with OpenAI:
+
+```sh
+uv add "text2cypher[anthropic]"        # or: pip install "text2cypher[anthropic]"
+```
+
+```python
+from anthropic import AsyncAnthropic
+from text2cypher import Text2Cypher
+
+agent = Text2Cypher(client, AsyncAnthropic(), model="claude-sonnet-5-5")
+```
+
+* Any `anthropic.AsyncAnthropic` works; the SDK reads `ANTHROPIC_API_KEY`, or you pass your own key and configuration to it. It has no model of its own, so `model=` is required, and `model=` and `model_options` are refused with a client that is not an OpenAI or Anthropic SDK client, as with OpenAI.
+* `LLMSchemaFilter(model="claude-haiku-5-5")` asks the main client with another model, and `LLMSchemaFilter(AsyncAnthropic(), model="...")` asks another client, as with OpenAI.
+* **There is no `temperature`.** The current models take only their default (and on the newest API version, which the SDK sends from 2.0.0, none of `temperature`, `top_p` and `top_k` at all, even at the default), so the adapter never sends one and `model_options={"temperature": ...}` is a `ValueError`. A Claude model's reply cannot be made repeatable the way `temperature: 0` does for another model.
+* `reasoning_effort` (`"low"`, `"medium"`, `"high"`, `"xhigh"`, `"max"`) is sent as the effort of the request. Leave it out to take the model's own default, which differs by model. The models think by default, and some cannot be told not to.
+* `max_tokens` is required by the API, and the model's thinking counts toward it: the default is 16000, and `model_options={"extra": {"max_tokens": 32000}}` changes it. The rest of `extra` is sent as it is; it may not name `system`, `top_p` or `top_k`.
+* `timeout`, `max_retries` and `tools` work as with OpenAI (see [Model options](#model-options)). `system_role` has no effect: the system prompt is always its own field.
+* A reply that the model refuses to give ends the call with the finish reason `"refusal"`, which the loop does not retry.
+* **Skills.** When a reply asks for a tool (a skill is read with one), the API requires the model's thinking blocks to come back unchanged with the tool's answer. The adapter keeps the content blocks of the last 256 such replies and sends them back; a reply with no tool call is sent back as its text alone, which the API allows.
 
 ## Testing your code
 
