@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## Unreleased
 
+## 3.0.1 - 2026-10-26
+
+Support for FalkorDB 6, and a C parser for the database's replies. Nothing changes in the API.
+
 ### Changed
 
 - `cypher-guardrail>=1.6.0`, which checks queries on FalkorDB 6 as well as 4: a query that writes is reported as such again (on 6 the check it relied on stopped working). It also reports a division by a literal zero while validating, as an `ArithmeticError` issue, so that the query is corrected before it runs.
